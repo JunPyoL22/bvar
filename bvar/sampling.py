@@ -1,0 +1,34 @@
+import numpy as np
+from numpy.linalg import inv, cholesky
+from numpy.random import randn
+
+
+def draw_inverse_gamma(T0, D0, x):
+    '''
+    :param T0: initial degrees of freedom
+    :param D0: initial scale parameter
+    :param x: vector of innovations ,Tx1
+    :return: sigma2: drawed
+    '''
+    T = x.shape[0]
+    T1 = T0 + T
+    D1 = D0 + dot(x.T, x) # 1x1
+    z0 = randn(T1, 1) # T1x1
+    z0z0 = dot(z0.T, z0) # 1x1
+    sigma2 = D1/z0z0 # 1x1
+    return sigma2 # 1x1
+
+class Sampler(object):
+    def sampling_from_normal(self, mean, variance):
+        from utils import cholx
+        km = mean.shape[0]
+        return mean + np.dot(cholx(variance).T, randn(km, 1))
+
+    def sampling_from_inverseGamma(self, scale, dof):
+        z0 = randn(dof,1)
+        return scale/np.dot(z0.T,z0)
+
+    def sampling_from_inverseWishart(self, scale, dof):
+        arr = np.dot(cholesky(scale).T, randn(scale.shape[0], dof))
+        return inv(np.dot(arr, arr.T))
+        
