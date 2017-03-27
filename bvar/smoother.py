@@ -1,6 +1,6 @@
 import numpy as np
 from numpy.random import randn
-from numpy.linalg import cholesky
+from numpy.linalg import cholesky, inv
 from bvar.base import Smoother
 from bvar.filter import KalmanFilter
 
@@ -15,7 +15,7 @@ class KalmanFilterForDK(KalmanFilter):
         super().__init__(self, state0, state0_var)
         self.smoother = DisturbanceSmootherDK()
 
-    def filtering(self, y, Z, H, Q, T=None, R=None):
+    def filtering(self, y, *, Z=None, H=None, Q=None, T=None, R=None):
 
         T, R, state = self.get_initial_parameters_in_transition_equation(y, T, R)
         self.forward_recursion_to_estimate_state(y, Z, state, T, R, H, Q)
@@ -161,16 +161,17 @@ class DurbinKoopmanSmoother(Smoother):
 
         wplus = self.get_wplus(H, Q)
         self.state_space_recursion(wplus, Z, T, R)
-        self.kalmanfilter.filtering(y, Z, H, Q, T, R)
-        w_hat = self.kalmanfilter.w_hat
-        state_hat = self.kalmanfilter.state_hat
+
+        self.kalmanfilter.filtering(y, Z=Z, H=H, Q=Q, T=T, R=R)
+        self.w_hat = self.kalmanfilter.w_hat
+        self.state_hat = self.kalmanfilter.state_hat
         self.loglik = self.kalmanfilter.loglik
 
-        self.kalmanfilter.filtering(self.yplus, Z, H, Q, T, R)
-        w_hat_plus = self.kalmanfilter.w_hat
-        state_hat_plus = self.kalmanfilter.state_hat
+        self.kalmanfilter.filtering(self.yplus, Z=Z, H=H, Q=Q, T=T, R=R)
+        self.w_hat_plus = self.kalmanfilter.w_hat
+        self.state_hat_plus = self.kalmanfilter.state_hat
 
-        self.state_tilda = state_hat + self.state_plus - state_hat_plus
+        self.state_tilda = self.state_hat + self.state_plus - self.state_hat_plus
         return self
 
 

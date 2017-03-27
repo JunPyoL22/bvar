@@ -20,7 +20,7 @@ def draw_inverse_gamma(T0, D0, x):
 
 class Sampler(object):
     def sampling_from_normal(self, mean, variance):
-        from utils import cholx
+        from bvar.utils import cholx
         km = mean.shape[0]
         return mean + np.dot(cholx(variance).T, randn(km, 1))
 

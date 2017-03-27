@@ -85,7 +85,7 @@ class SetupForVAR(object):
         return SetupForForecasting(self.forecast_method, self.forecast_horizon).get_data(Y, self.lag)
 
     def _setup_X_on_VAR(self, Y, const):
-        from utils import lag
+        from bvar.utils import lag
         '''
         :param const: include a constant column in X or Not
         '''

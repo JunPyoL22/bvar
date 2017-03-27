@@ -1,7 +1,6 @@
 
 import numpy as np
-from numpy.random import randn
-from numpy.linalg import inv, cholesky
+from numpy.linalg import inv
 from bvar.base import BaseLinearRegression, BayesianModel, BasePrior, SetupForVAR
 from bvar.sampling import Sampler
 from bvar.utils import standardize, cholx, vec, DotDict
@@ -9,7 +8,7 @@ from bvar.utils import standardize, cholx, vec, DotDict
 class BayesianLinearRegression(BayesianModel, Sampler):
 
     def __init__(self, *, n_iter=100, n_save=50, lag=0, y_type='multivariate',
-                 sampling_method='Gibbs', prior_option={'Conjugate':'NormalWishart'},
+                 sampling_method='Gibbs', prior_option={'Conjugate':'NormalWishart-Informative'},
                  alpha0=None, V0=None, V0_scale=10, v0=None, S0=None,
                  stability_check=False):
         '''
@@ -18,9 +17,14 @@ class BayesianLinearRegression(BayesianModel, Sampler):
         :param lag: int, model lag, defult=0
         :param y_type: str, "univariate" or "multivariate"
         :param sampling_method: str, "Gibbs", "Metropolis_hasting"
-        :param prior_option: dict, {"Conjugate":"Diffuse"} or {"Conjugate":"NormalWishart"},
-                                   {"Conjugate":"NormalGamma"}
-                                   {"NonConjugate":"Inden_NormalWishart"}
+        :param prior_option: dict, {"Conjugate": "NormalWishart-Informative"},
+                                   {"Conjugate": "NormalWishart-NonInformative"},
+                                   {"Conjugate": "NormalGamma-Informative"},
+                                   {"Conjugate": "NormalGamma-NonInformative"},
+                                   {"NonConjugate": "Indep_NormalWishart-Informative"},
+                                   {"NonConjugate": "Indep_NormalWishart-NonInformative"},
+                                   {"NonConjugate": "Indep_NormalGamma-Informative"},
+                                   {"NonConjugate": "Indep_NormalGamma-NonInformative"},
         :param alpha0: mean of Prior Normaldistribution
         :param V0: variance of Prior  Normaldistribution
         :param V0_scale: scale of variance of Prior Normaldistribution
@@ -63,18 +67,11 @@ class BayesianLinearRegression(BayesianModel, Sampler):
             S0 = np.atleast_2d(list(self.S0))
 
         if list(self.prior_option.keys())[0] is 'Conjugate':
-            if list(self.prior_option.values())[0] is 'Diffuse':
-                self.prior = NaturalConjugatePrior(Y, X, 0*np.eye(k*m),
-                                                   scale*np.eye(k),
-                                                   0, 0.1*np.eye(m),
-                                                   type='NonInformative')
-                return self
-            if 'Normal' in list(self.prior_option.values())[0]:
-            # NormalWishart, NormalGamma
-                self.prior = NaturalConjugatePrior(Y, X, alpha0,
+            prior_type = list(self.prior_option.values())[0].split('-')[1]
+            self.prior = NaturalConjugatePrior(Y, X, alpha0,
                                                 scale*V0, v0, S0,
-                                                type='NormalWishart')
-                return self
+                                                type=prior_type)
+            return self
 
         # Non-conjugate
         else:
@@ -120,14 +117,14 @@ class BayesianLinearRegression(BayesianModel, Sampler):
         return self
 
 class NaturalConjugatePrior(BasePrior, BaseLinearRegression):
-    def __init__(self, Y, X, alpha0, V0, v0, S0, type='NomalWishart'):
+    def __init__(self, Y, X, alpha0, V0, v0, S0, type='Informative'):
         '''
         Natural Conjugate Prior
         alpha0: mean of prior Normal distribution
         V0: variance of prior Normal distribution
         v0: degree of freedom of prior Wishart Distribution
         S0: scale matrix of freedom of prior Wishart Distribution
-        type: str, 'NormalWishart' or 'NonInformative'
+        type: str, 'Informative' or 'NonInformative'
         '''
         self.Y = Y
         self.X = X
@@ -139,14 +136,20 @@ class NaturalConjugatePrior(BasePrior, BaseLinearRegression):
 
     def get_posterior_distribution(self):
         '''
-        :param type: str, 'NormalWishart', 'NormalGamma'
+        :param type: str, 'Informative', 'NonInformative'
         :return: mean: nparray vector, mean of posterior Noraml distribution
                  variance: nparray, variance covariance of posterior Normal distribution
         '''
         ols = BaseLinearRegression().fit(self.Y, self.X)
-        if 'Normal' in self.type:
-            self.normal_parameters = self._get_normal_posterior_parameters(ols.coef, ols.sigma)
-            self.wishart_parameters = self._get_wishart_posterior_parameters(ols.coef, ols.sse)
+
+        if self.type is 'NonInformative':
+            sigma = np.eye(self.Y.shape[1])
+        else:
+            sigma = ols.sigma
+
+        self.normal_parameters = self._get_normal_posterior_parameters(ols.coef, sigma)
+        self.wishart_parameters = self._get_wishart_posterior_parameters(ols.coef, ols.sse)
+
         return self
 
     def _get_normal_posterior_parameters(self, alpha_ols, sigma):
@@ -182,7 +185,7 @@ class StateSpaceModel(object):
     (1) Observation Eq: y(t) = Z(t)*alpha(t) + e(t) e(t) ~ N(0,H(t))
     (2) Transition Eq: alpha(t) = T(t)*alpha(t) + R(t)n(t) n(t) ~ N(0,Q(t))
     '''
-    def __init__(self,*,state0=None, state_var0=None,
+    def __init__(self,*, state0=None, state_var0=None,
                  smoother_mothod='DurbinKoopman'):
         self.state0 = state0
         self.state_var0 = state_var0
@@ -206,11 +209,11 @@ class FactorAugumentedVARX(BayesianLinearRegression):
         self.is_standardize = is_standardize
 
     def get_principle_component(self, Y):
-        from utils import get_principle_component
+        from bvar.utils import get_principle_component
         return get_principle_component(Y, self.n_factor)
 
-    def get_factor_loadings(self, y, x):
-        bayes_lreg = BayesianLinearRegression(n_iter=1, n_save=1, lag=0, y_type='univariate',
+    def get_factor_loadings(self, y, x, lag=0):
+        bayes_lreg = BayesianLinearRegression(n_iter=1, n_save=1, lag=lag, y_type='univariate',
                                               prior_option={'Conjugate': 'NormalGamma'},
                                               alpha0=np.zeros((x.shape[1], 1)),
                                               V0=np.eye(x.shape[1]), V0_scale=1,
@@ -232,24 +235,51 @@ class FactorAugumentedVARX(BayesianLinearRegression):
         if self.n_factor != 0:
             self.factors, _ = self.get_principle_component(Y)
 
-
-        state0 = None
-        state0_var = None
-
         for ind in range(m):
 
             lag = self.lag
+            var_lag = self.var_lag
+
             y_i = Y[:, ind : ind + 1][lag:, :]
-            z_i = z[:, ind : ind+1][lag:,:]
+            z_i = z[:, ind : ind + 1][lag:,:]
             y_i_lag = SetupForVAR(lag=lag, const=False).prepare(y_i).X
-            z_lag = SetupForVAR(lag=lag, const=False).prepare(z_i).X
-            x = np.c_[self.factors[lag:, :], y_i_lag, z[lag:, :], z_lag]
+            z_i_lag = SetupForVAR(lag=lag, const=False).prepare(z_i).X
 
-            coef_i, sigma_i = self.get_factor_loadings(y_i, x)
+            if lag == 0:
+                x = np.c_[self.factors, z_i]
+            elif lag > 0:
+                x = np.c_[self.factors[lag:, :], y_i_lag, z_i, z_i_lag]
 
+            # set state0 by var_lag
+            if var_lag >= 2:
+                temp0 = np.empty((1, 0))
+
+                for i in range(var_lag-1, 0, -1):
+                    temp0 = np.append(temp0, x[i-1:i,:])
+                state0 = np.c_[temp0, np.zeros((1, x.shape[1]))]
+
+            elif var_lag == 1:
+                state0 = np.zeros((1, x.shape[1]))
+
+            state0_var = np.eye(state0.shape[1])
+            coef_i, sigma_i = self.get_factor_loadings(y_i, x, lag=lag)
+
+            Z = np.c_[coef_i, np.zeros((1, x.shape[1]))]
+
+            # Setup for VAR transition equation of State Space Model
+            setup_VAR = SetupForVAR(lag=var_lag, const=True)
+            state_y_i = setup_VAR.prepare(x).Y
+            state_x_i = setup_VAR.prepare(x).X
 
             for i in range(self.n_iter):
+                state_VAR = BayesianLinearRegression(n_iter=1, n_save=1, lag=lag, y_type='multivariate',
+                                                     prior_option={'Conjugate': 'NormalWishart-NonInformative'},
+                                                     alpha0=np.zeros((x.shape[1], 1)),
+                                                     V0=np.eye(x.shape[1]), V0_scale=1,
+                                                     v0=0, S0=0).estimate(state_y_i, state_x_i)
+                state_VAR_coef = state_VAR.coef
+                state_VAR_sigma = state_VAR.sigma
+
                 pass
 
-        #  state0 = pc_factor[0:1, :]
 

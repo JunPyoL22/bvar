@@ -4,7 +4,7 @@ from numpy.linalg import inv, cholesky, eigvals
 from numpy.random import randn
 from scipy.stats import multivariate_normal
 from functools import wraps
-from utils import lag, vec, cholx, DotDict, get_principle_component
+from bvar.utils import lag, vec, cholx, DotDict, get_principle_component
 from smoother import DurbinKoopmanSmoother
 from bvar.sampling import draw_inverse_gamma
 
