@@ -4,7 +4,7 @@ from numpy.random import randn
 from numpy.linalg import inv, cholesky
 from bvar.base import BaseLinearRegression, BayesianModel, BasePrior, SetupForVAR
 from bvar.sampling import Sampler
-from utils import standardize, cholx, vec, DotDict
+from bvar.utils import standardize, cholx, vec, DotDict
 
 class BayesianLinearRegression(BayesianModel, Sampler):
 
