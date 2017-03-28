@@ -45,9 +45,14 @@ class BayesianLinearRegression(BayesianModel, Sampler):
         self.S0 = S0
         self.stability_check = stability_check
 
-    def estimate(self, Y: object, X: object) -> object:
+    def estimate(self, Y: object, X: object):
+        
+        self.set_prior(Y, X)
+        if self.n_save >= 1:
+            self.coef = np.empty((self.n_save, self.k))
+            self.sigma = np.empty((self.n_save, self.m, self.m))
 
-        self.gibbs_sampling(Y ,X)
+        self.gibbs_sampling()
         return self
 
     def set_prior(self, Y, X):
@@ -92,86 +97,69 @@ class BayesianLinearRegression(BayesianModel, Sampler):
             self.prior.get_conditional_posterior_distribution(value, dist_type=dist_type)
         return self
 
-    def gibbs_sampling(self, Y, X):
-
-        self.set_prior(Y, X)
-        if self.n_save >= 1:
-            self.coef = np.empty((self.n_save, self.k))
-            self.sigma = np.empty((self.n_save, self.m, self.m))
-
+    def gibbs_sampling(self):
+        
         if self.prior_option_key is 'Conjugate':
-            self._gibbs_sampling_from_Conjugate_Prior()
-        elif self.prior_option_key is 'NonConjugate':
-            self._gibbs_sampling_from_NonConjugate_Prior()
+            self.get_posterior_distribution()
+            mean, variance = self.posterior.normal_parameters.mean, \
+                            self.posterior.normal_parameters.variance
+            scale, dof = self.posterior.wishart_parameters.scale, \
+                        self.posterior.wishart_parameters.dof
 
+            for i in range(self.n_iter):
+                coef, sigma = self._sampling_from_posterior(mean, variance, scale, dof)
+                self._save(coef, sigma, i)
+
+        elif self.prior_option_key is 'NonConjugate':
+            sigma = np.eye(self.m)
+
+            for i in range(self.n_iter):
+                coef, sigma = self._sampling_from_conditional_posterior(sigma=sigma)
+                self._save(coef, sigma, i)
         return self
 
-    def _gibbs_sampling_from_Conjugate_Prior(self):
+    def _save(self, coef, sigma, i):
+        if i >= self.n_save:
+            self.coef[i-self.n_save:i-self.n_save+1, :] = coef[:, 0:1].T
+            self.sigma[i-self.n_save:i-self.n_save+1, :, :] = sigma
+        if self.n_save == 1:
+            self.coef = coef[:, 0:1]
+            self.sigma = sigma
 
-        self.get_posterior_distribution()
+    def _sampling_from_posterior(self, mean, variance, scale, dof):
+
+        coef = self.sampling_from_normal(mean, variance)
+
+        if self.stability_check:
+            '''should implement coef stability check later'''
+            pass
+        if self.y_type is 'multivariate':
+            sigma = self.sampling_from_inverseWishart(scale, dof)
+        elif self.y_type is 'univariate':
+            sigma = self.sampling_from_inverseGamma(scale, dof)
+        return coef, sigma
+
+    def _sampling_from_conditional_posterior(self, *, sigma=None):
+    
+        self.get_conditional_posterior_distribution(sigma, dist_type='Normal')
         mean, variance = self.posterior.normal_parameters.mean, \
-                        self.posterior.normal_parameters.variance
+                         self.posterior.normal_parameters.variance
+
+        coef = self.sampling_from_normal(mean, variance)
+
+        self.get_conditional_posterior_distribution(coef, dist_type='Wishart')
         scale, dof = self.posterior.wishart_parameters.scale, \
                      self.posterior.wishart_parameters.dof
 
-        for i in range(self.n_iter):
-
-            coef = self.sampling_from_normal(mean, variance)
-
-            if self.stability_check:
-                '''should implement coef stability check later'''
-                pass
-            if self.y_type is 'multivariate':
-                sigma = self.sampling_from_inverseWishart(scale, dof)
-            elif self.y_type is 'univariate':
-                sigma = self.sampling_from_inverseGamma(scale, dof)
-
-            # save
-            if i >= self.n_save:
-                self.coef[i-self.n_save:i-self.n_save+1, :] = coef[:, 0:1].T
-                self.sigma[i-self.n_save:i-self.n_save+1, :, :] = sigma
-
-            if self.n_save == 1:
-                self.coef = coef[:, 0:1]
-                self.sigma = sigma
-
-        return self
-
-    def _gibbs_sampling_from_NonConjugate_Prior(self):
-
-        sigma = np.eye(self.m)
-
-        for i in range(self.n_iter):
-
-            self.get_conditional_posterior_distribution(sigma, dist_type='Normal')
-            mean, variance = self.posterior.normal_parameters.mean, \
-                             self.posterior.normal_parameters.variance
-
-            coef = self.sampling_from_normal(mean, variance)
-
-            self.get_conditional_posterior_distribution(coef, dist_type='Wishart')
-            scale, dof = self.posterior.wishart_parameters.scale, \
-                         self.posterior.wishart_parameters.dof
-
-            if self.stability_check:
-                '''should implement coef stability check later'''
-                pass
-            if self.y_type is 'multivariate':
-                sigma = self.sampling_from_inverseWishart(scale, dof)
-            elif self.y_type is 'univariate':
-                sigma = self.sampling_from_inverseGamma(scale, dof)
-
-            # save
-            if i >= self.n_save:
-                self.coef[i-self.n_save:i-self.n_save+1, :] = coef[:, 0:1].T
-                self.sigma[i-self.n_save:i-self.n_save+1, :, :] = sigma
-
-            if self.n_save == 1:
-                self.coef = coef[:, 0:1]
-                self.sigma = sigma
-
-        return self
-
+        if self.stability_check:
+            '''should implement coef stability check later'''
+            pass
+        if self.y_type is 'multivariate':
+            sigma = self.sampling_from_inverseWishart(scale, dof)
+        elif self.y_type is 'univariate':
+            sigma = self.sampling_from_inverseGamma(scale, dof)
+        return coef, sigma
+        
 class NaturalConjugatePrior(BasePrior, BaseLinearRegression):
 
     def __init__(self, Y, X, alpha0, V0, v0, S0, prior_type='Informative'):
@@ -308,7 +296,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                  smoother_option='DurbinKoopman',tvp_option=False,
                  is_standardize=False):
 
-        super().__init__(n_iter=n_iter, n_save=n_save, lag=lag,y_type="multivariate",
+        super().__init__(n_iter=n_iter, n_save=n_save, lag=lag, y_type="univariate",
                          prior_option={'NonConjugate':'Indep_NormalWishart-NonInformative'},
                          alpha0=alpha0, V0=V0, V0_scale=V0_scale, S0=S0)
         self.smoother_option = smoother_option
@@ -321,20 +309,6 @@ class FactorAugumentedVARX(BayesianLinearRegression):
         from bvar.utils import get_principle_component
         return get_principle_component(Y, self.n_factor)
 
-    def _gibbs_sampling(self, *, sigma=None):
-
-        self.get_conditional_posterior_distribution(sigma, dist_type='Normal')
-        mean, variance = self.posterior.normal_parameters.mean, \
-                         self.posterior.normal_parameters.variance
-
-        coef = self.sampling_from_normal(mean, variance)
-
-        self.get_conditional_posterior_distribution(coef, dist_type='Wishart')
-        scale, dof = self.posterior.wishart_parameters.scale, \
-                     self.posterior.wishart_parameters.dof
-
-        sigma = self.sampling_from_inverseGamma(scale, dof)
-        return coef, sigma
         # bayes_fl = BayesianLinearRegression(n_iter=1, n_save=1, lag=lag, y_type='univariate',
         #                                       prior_option={'NonConjugate': 'Indep_NormalWishart-NonInformative'},
         #                                       alpha0=np.zeros((x.shape[1], 1)),
@@ -393,17 +367,16 @@ class FactorAugumentedVARX(BayesianLinearRegression):
 
             for i in range(self.n_iter):
 
-                coef_i, sigma_i = self._gibbs_sampling(sigma=sigma_i)
+                coef_i, sigma_i = self._sampling_from_conditional_posterior(sigma=sigma_i)
 
                 # Set prior for VAR(state transition equation) sampling
                 state_Y = setup_VAR.prepare(self.state).Y
                 state_X = setup_VAR.prepare(self.state).X
 
                 self.set_prior(state_Y, state_X)
-
                 if i == 0: state_VAR_sigma = np.eye(state_Y.shape[1])
 
-                state_VAR_coef, state_VAR_sigma = self._gibbs_sampling(sigma=state_VAR_sigma)
+                state_VAR_coef, state_VAR_sigma = self._sampling_from_conditional_posterior(sigma=state_VAR_sigma)
                 Z = np.c_[coef_i, np.zeros((1, self.state.shape[1]))]
 
                 # state_VAR = BayesianLinearRegression(n_iter=1, n_save=1, lag=lag, y_type='multivariate',
@@ -418,7 +391,6 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                 self._set_state(y_i_lag, z_i, z_i_lag)
                 pass
 
-
     def _set_state(self, y_i_lag, z_i, z_i_lag):
         if self.lag == 0:
             self.state = np.c_[self.factors, z_i]
@@ -426,7 +398,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             self.state = np.c_[self.factors[self.lag:, :], y_i_lag, z_i, z_i_lag]
         return self
 
-    def _gibbs_sampling(self, *, sigma=None):
+    def _sampling_from_conditional_posterior(self, *, sigma=None):
 
         self.get_conditional_posterior_distribution(sigma, dist_type='Normal')
         mean, variance = self.posterior.normal_parameters.mean, \
