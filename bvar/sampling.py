@@ -12,9 +12,9 @@ def draw_inverse_gamma(T0, D0, x):
     '''
     T = x.shape[0]
     T1 = T0 + T
-    D1 = D0 + dot(x.T, x) # 1x1
+    D1 = D0 + np.dot(x.T, x) # 1x1
     z0 = randn(T1, 1) # T1x1
-    z0z0 = dot(z0.T, z0) # 1x1
+    z0z0 = np.dot(z0.T, z0) # 1x1
     sigma2 = D1/z0z0 # 1x1
     return sigma2 # 1x1
 
