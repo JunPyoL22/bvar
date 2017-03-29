@@ -155,6 +155,17 @@ class DurbinKoopmanSmoother(Smoother):
 
     def smoothing(self, y, *, Z=None, alpha0=None, P0=None,
                   T=None, R=None, H=None, Q=None):
+        '''
+        :param y: nparray, 
+        :param Z: nparray,
+        :param alpha0: nparray, initital value of state
+        :param P0: nparray, initital variance of state
+        :param T: nparray, 
+        :param R: nparray,
+        :param H: nparray,
+        :param Q: nparray,
+        :return: 
+        '''
 
         self.m, self.t = y.shape
         self.k, _ = alpha0.shape

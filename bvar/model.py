@@ -4,6 +4,7 @@ from numpy.linalg import inv
 from bvar.base import BaseLinearRegression, BayesianModel, BasePrior, SetupForVAR
 from bvar.sampling import Sampler
 from bvar.utils import standardize, cholx, vec, DotDict
+from bvar.smoother import DurbinKoopmanSmoother
 
 class BayesianLinearRegression(BayesianModel, Sampler):
 
@@ -74,47 +75,54 @@ class BayesianLinearRegression(BayesianModel, Sampler):
 
         self.prior_option_key = list(self.prior_option.keys())[0]
         if self.prior_option_key is 'Conjugate':
-            prior_type = list(self.prior_option.values())[0].split('-')[1]
+            self.prior_type = list(self.prior_option.values())[0].split('-')[1]
             self.prior = NaturalConjugatePrior(Y, X, alpha0,
                                                 scale*V0, v0, S0,
-                                                type=prior_type)
+                                                type=self.prior_type)
             return self
 
         # NonConjugate
         else:
-            prior_type = list(self.prior_option.values())[0].split('-')[1]
+            self.prior_type = list(self.prior_option.values())[0].split('-')[1]
             self.prior = NonConjugatePrior(Y, X, alpha0,
                                                 scale*V0, v0, S0,
-                                                type=prior_type)
+                                                type=self.prior_type)
             return self
 
-    def get_posterior_distribution(self, alpha, sigma):
-        self.posterior = self.prior.get_posterior_distribution()
+    def get_posterior_distribution(self, *, coef_ols=None, sigma=None, sse_ols=None):
+        self.posterior = self.prior.get_posterior_distribution(coef_ols=coef_ols,
+                                                               sigma=sigma,
+                                                               sse_ols=sse_ols)
         return self
 
-    def get_conditional_posterior_distribution(self, value, dist_type=None):
+    def get_conditional_posterior_distribution(self, *, coef_ols=None, drawed_value=None,
+                                               dist_type=None):
         self.posterior = \
-            self.prior.get_conditional_posterior_distribution(value, dist_type=dist_type)
+            self.prior.get_conditional_posterior_distribution(coef_ols=coef_ols,
+                                                              drawed_value=drawed_value,
+                                                              dist_type=dist_type)
         return self
 
     def gibbs_sampling(self):
-        
+        ols = self.fit(self.Y, self.X, method='ls')
         if self.prior_option_key is 'Conjugate':
-            self.get_posterior_distribution()
-            mean, variance = self.posterior.normal_parameters.mean, \
-                            self.posterior.normal_parameters.variance
-            scale, dof = self.posterior.wishart_parameters.scale, \
-                        self.posterior.wishart_parameters.dof
+            if self.prior_type is 'NonInformative':
+                sigma = np.eye(self.Y.shape[1])
+            elif self.prior_type is 'Informative':
+                sigma = ols.sigma
 
             for i in range(self.n_iter):
-                coef, sigma = self._sampling_from_posterior(mean, variance, scale, dof)
+                coef, sigma = self.sampling_from_posterior(coef_ols=ols.coef,
+                                                            sigma=sigma,
+                                                            sse_ols=ols.sse)
                 self._save(coef, sigma, i)
 
         elif self.prior_option_key is 'NonConjugate':
             sigma = np.eye(self.m)
 
             for i in range(self.n_iter):
-                coef, sigma = self._sampling_from_conditional_posterior(sigma=sigma)
+                coef, sigma = self.sampling_from_conditional_posterior(coef_ols=ols.coef,
+                                                                        sigma=sigma)
                 self._save(coef, sigma, i)
         return self
 
@@ -122,32 +130,44 @@ class BayesianLinearRegression(BayesianModel, Sampler):
         if i >= self.n_save:
             self.coef[i-self.n_save:i-self.n_save+1, :] = coef[:, 0:1].T
             self.sigma[i-self.n_save:i-self.n_save+1, :, :] = sigma
+
         if self.n_save == 1:
             self.coef = coef[:, 0:1]
             self.sigma = sigma
 
-    def _sampling_from_posterior(self, mean, variance, scale, dof):
+    def sampling_from_posterior(self, *, coef_ols=None, sigma=None,sse_ols=None):
+        self.get_posterior_distribution(coef_ols=coef_ols,
+                                        sigma=sigma,
+                                        sse_ols=sse_ols)
+        mean, variance = self.posterior.normal_parameters.mean, \
+                         self.posterior.normal_parameters.variance
+        scale, dof = self.posterior.wishart_parameters.scale, \
+                     self.posterior.wishart_parameters.dof
 
-        coef = self.sampling_from_normal(mean, variance)
+        coef_drawed = self.sampling_from_normal(mean, variance)
 
         if self.stability_check:
             '''should implement coef stability check later'''
             pass
         if self.y_type is 'multivariate':
-            sigma = self.sampling_from_inverseWishart(scale, dof)
+            sigma_drawed = self.sampling_from_inverseWishart(scale, dof)
         elif self.y_type is 'univariate':
-            sigma = self.sampling_from_inverseGamma(scale, dof)
-        return coef, sigma
+            sigma_drawed = self.sampling_from_inverseGamma(scale, dof)
+        return coef_drawed, sigma_drawed
 
-    def _sampling_from_conditional_posterior(self, *, sigma=None):
+    def sampling_from_conditional_posterior(self, *, coef_ols=None, sigma=None):
     
-        self.get_conditional_posterior_distribution(sigma, dist_type='Normal')
+        self.get_conditional_posterior_distribution(coef_ols=coef_ols,
+                                                    drawed_value=sigma,
+                                                    dist_type='Normal')
         mean, variance = self.posterior.normal_parameters.mean, \
                          self.posterior.normal_parameters.variance
 
-        coef = self.sampling_from_normal(mean, variance)
+        coef_drawed = self.sampling_from_normal(mean, variance)
 
-        self.get_conditional_posterior_distribution(coef, dist_type='Wishart')
+        self.get_conditional_posterior_distribution(coef_ols=coef_ols,
+                                                    drawed_value=coef_drawed,
+                                                    dist_type='Wishart')
         scale, dof = self.posterior.wishart_parameters.scale, \
                      self.posterior.wishart_parameters.dof
 
@@ -155,12 +175,12 @@ class BayesianLinearRegression(BayesianModel, Sampler):
             '''should implement coef stability check later'''
             pass
         if self.y_type is 'multivariate':
-            sigma = self.sampling_from_inverseWishart(scale, dof)
+            sigma_drawed = self.sampling_from_inverseWishart(scale, dof)
         elif self.y_type is 'univariate':
-            sigma = self.sampling_from_inverseGamma(scale, dof)
-        return coef, sigma
+            sigma_drawed = self.sampling_from_inverseGamma(scale, dof)
+        return coef_drawed, sigma_drawed
         
-class NaturalConjugatePrior(BasePrior, BaseLinearRegression):
+class NaturalConjugatePrior(BasePrior):
 
     def __init__(self, Y, X, alpha0, V0, v0, S0, prior_type='Informative'):
         '''
@@ -179,22 +199,17 @@ class NaturalConjugatePrior(BasePrior, BaseLinearRegression):
         self.S0 = S0
         self.prior_type = prior_type
 
-    def get_posterior_distribution(self):
+    def get_posterior_distribution(self, *, coef_ols=None,
+                                   sigma=None, sse_ols=None):
         '''
-        :param type: str, 'Informative', 'NonInformative'
+        :param coef_ols: nparray, estimated by ols 
+        :param sigma: nparray, drawed sigma
+        :param sse_ols: nparray, computed sum of square error by ols 
         :return: mean: nparray vector, mean of posterior Noraml distribution
                  variance: nparray, variance covariance of posterior Normal distribution
         '''
-        ols = self.fit(self.Y, self.X, method='ls')
-
-        if self.prior_type is 'NonInformative':
-            sigma = np.eye(self.Y.shape[1])
-        elif self.prior_type is 'Informative':
-            sigma = ols.sigma
-
-        self.normal_parameters = self._get_normal_posterior_parameters(ols.coef, sigma)
-        self.wishart_parameters = self._get_wishart_posterior_parameters(ols.coef, ols.sse)
-
+        self.normal_parameters = self._get_normal_posterior_parameters(coef_ols, sigma)
+        self.wishart_parameters = self._get_wishart_posterior_parameters(coef_ols, sse_ols)
         return self
 
     def _get_normal_posterior_parameters(self, alpha_ols, sigma):
@@ -224,42 +239,41 @@ class NaturalConjugatePrior(BasePrior, BaseLinearRegression):
         return DotDict({'scale':self.S_bar,
                         'dof':self.v_bar})
 
-class NonConjugatePrior(NaturalConjugatePrior, BaseLinearRegression):
+class NonConjugatePrior(NaturalConjugatePrior):
 
-    def __init__(self, Y, X, alpha, sigma, alpha0=None, V0=None, v0=None, S0=None, prior_type='Informative'):
+    def __init__(self, Y, X, alpha0=None, V0=None,
+                 v0=None, S0=None, prior_type='Informative'):
         '''
         Non Conjugate Prior
-        alpha: nparray, drawed alpha from independent Normal distribution
-        sigma: nparray, drawed sigma from independent Wishart distribution
-        alpha0: int or nparray, mean of prior independent Normal distribution
-        V0: int or nparray, variance of prior independent Normal distribution
-        v0: int or degree of freedom of prior independent Wishart Distribution
-        S0: int or nparray, scale matrix of freedom of prior independent Wishart Distribution
-        prior_type: str, 'Informative' or 'NonInformative'
+        :param alpha0: int or nparray, mean of prior independent Normal distribution
+        :param int or nparray, variance of prior independent Normal distribution
+        :param int or degree of freedom of prior independent Wishart Distribution
+        :param int or nparray, scale matrix of freedom of prior independent Wishart Distribution
+        :param prior_type: str, 'Informative' or 'NonInformative'
         '''
         super().__init__(self,Y, X, alpha0, V0, v0, S0, prior_type=prior_type)
-        self.alpha = alpha
-        self.sigma = sigma
 
-    def get_conditional_posterior_distribution(self, drawed_value, dist_type=None):
+    def get_conditional_posterior_distribution(self, *, coef_ols=None,
+                                               drawed_value=None, dist_type=None):
         '''
         conditional posterior distribution
+        :param coef_ols: nparray, estimated coefi by ols  
         :param drawed_value: nparray, drawed_value is drawed array from conditional Normal posterior distribution 
                                     or drawed array from conditional Wishart posterior distribution 
         :param dist_type: str, distribution type, "Normal", "Wishart"  
         :return: 
         '''
         if dist_type is 'Normal':
-            self.normal_parameters = self._get_normal_posterior_parameters(ols.coef, drawed_value)
+            self.normal_parameters = self._get_normal_posterior_parameters(coef_ols, drawed_value)
         elif dist_type is 'Wishart':
             self.wishart_parameters = self._get_wishart_posterior_parameters(drawed_value)
         return self
 
     def _get_normal_posterior_parameters(self, alpha_ols, sigma):
         '''
-        :param alpha_ols: ols value of alpha 
-        :param sigma: drawed sigma from Wishart or Gamma distribution
-        :return: 
+        :param alpha_ols: nparray, ols value of alpha 
+        :param sigma: nparra, drawed sigma from Wishart or Gamma distribution
+        :return: Dotdic, mean and variance of normal posterior
         '''
         alpha0, V0 = self.alpha0, self.V0
         X = self.X
@@ -285,7 +299,7 @@ class NonConjugatePrior(NaturalConjugatePrior, BaseLinearRegression):
 
         reshaped_alpha = np.reshape(alpha, ((k, m))) #alpha:k*mx1
         self.sigma = np.dot((Y - np.dot(X, reshaped_alpha).T,
-                             (Y - np.dot(X, reshaped_alpha))
+                             (Y - np.dot(X, reshaped_alpha))))
         return DotDict({'scale': self.sigma,
                         'dof': self.v})
 
@@ -346,7 +360,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
 
             self._set_state(y_i_lag, z_i, z_i_lag)
 
-            # set state0 by var_lag
+            # set state0 and state0_var by VAR model lag(var_lag)
             if var_lag >= 2:
                 temp0 = np.empty((1, 0))
 
@@ -356,38 +370,50 @@ class FactorAugumentedVARX(BayesianLinearRegression):
 
             elif var_lag == 1:
                 state0 = np.zeros((1, self.state.shape[1]))
-
             state0_var = np.eye(state0.shape[1])
+            smoother = DurbinKoopmanSmoother(state0, state0_var)
 
             self.set_prior(y_i, self.state)
             sigma_i = np.eye(y_i.shape[1])
+            ols = self.fit(y_i, self.state, method='ls')
 
-            # Data setup for VAR transition equation of State Space Model
-            setup_VAR = SetupForVAR(lag=var_lag, const=True)
+            # Data setup for the VAR transition equation of State Space Model
+            setup_VAR = SetupForVAR(lag=var_lag, const=False)
 
             for i in range(self.n_iter):
 
-                coef_i, sigma_i = self._sampling_from_conditional_posterior(sigma=sigma_i)
+                # sampling factor loads
+                coef_i, sigma_i = \
+                    self._sampling_from_conditional_posterior(coef_ols=ols.coef,
+                                                              sigam=sigma_i,
+                                                              y_type='univariate')
 
                 # Set prior for VAR(state transition equation) sampling
                 state_Y = setup_VAR.prepare(self.state).Y
                 state_X = setup_VAR.prepare(self.state).X
 
                 self.set_prior(state_Y, state_X)
+                ols_var = self.fit(state_Y, state_X, method='ls')
                 if i == 0: state_VAR_sigma = np.eye(state_Y.shape[1])
 
-                state_VAR_coef, state_VAR_sigma = self._sampling_from_conditional_posterior(sigma=state_VAR_sigma)
+                state_VAR_coef, state_VAR_sigma = \
+                    self._sampling_from_conditional_posterior(coef_ols=ols_var.coef,
+                                                              sigma=state_VAR_sigma,
+                                                              y_type='univariate')
+                # set terms for state space model
                 Z = np.c_[coef_i, np.zeros((1, self.state.shape[1]))]
+                R = sigma_i
+                m_var, k_var = state_Y.shape[1], state_X.shape[1]
+                reshaped_state_VAR_coef = np.reshape(state_VAR_coef,(k_var, m_var))
+                T = np.r_[reshaped_state_VAR_coef.T,
+                          np.eye(m_var*(var_lag-1), k_var)]
+                Q = np.c_[np.r_[state_VAR_sigma, np.zeros(state_VAR_sigma.shape)],
+                          np.r_[np.zeros(state_VAR_sigma.shape), np.zeros(state_VAR_sigma.shape)]]
+                smoother.smoothing()
 
-                # state_VAR = BayesianLinearRegression(n_iter=1, n_save=1, lag=lag, y_type='multivariate',
-                #                                          prior_option={'NonConjugate': 'Indep_NormalWishart-NonInformative'},
-                #                                          alpha0=np.zeros((self.state.shape[1], 1)),
-                #                                          V0=np.eye(self.state.shape[1]), V0_scale=1,
-                #                                          v0=0, S0=0).estimate(state_y_i, state_x_i)
+                #update factors
 
-                #update factor
-
-                #reset state
+                #reset state using updated factors
                 self._set_state(y_i_lag, z_i, z_i_lag)
                 pass
 
@@ -398,17 +424,11 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             self.state = np.c_[self.factors[self.lag:, :], y_i_lag, z_i, z_i_lag]
         return self
 
-    def _sampling_from_conditional_posterior(self, *, sigma=None):
-
-        self.get_conditional_posterior_distribution(sigma, dist_type='Normal')
-        mean, variance = self.posterior.normal_parameters.mean, \
-                         self.posterior.normal_parameters.variance
-
-        coef = self.sampling_from_normal(mean, variance)
-
-        self.get_conditional_posterior_distribution(coef, dist_type='Wishart')
-        scale, dof = self.posterior.wishart_parameters.scale, \
-                     self.posterior.wishart_parameters.dof
-
-        sigma = self.sampling_from_inverseGamma(scale, dof)
-        return coef, sigma
+    def _sampling_from_conditional_posterior(self, *,
+                                             coef_ols=None,
+                                             sigma=None,
+                                             y_type=None):
+        self.y_type = y_type
+        coef_drawed, sigma_drawed = self.sampling_from_conditional_posterior(coef_ols=coef_ols,
+                                                                             sigma=sigma)
+        return coef_drawed, sigma_drawed

@@ -1,7 +1,7 @@
 import numpy as np
 from numpy.linalg import inv, det
 from scipy.sparse import spdiags
-from bvar.base import Filter, Smoother
+from bvar.base import Filter
 
 class HpFilter(Filter):
     # data = DataChecker()

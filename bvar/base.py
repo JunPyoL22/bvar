@@ -13,8 +13,8 @@ class BaseLinearRegression(object):
             self.sigma = (1/(Y.shape[0]-X.shape[1]))*self.sse
         return self
 
-class BayesianModel(metaclass=ABCMeta):
-
+class BayesianModel(BaseLinearRegression):
+    __metaclass__ = ABCMeta
     @abstractmethod
     def set_prior(self):
         pass
