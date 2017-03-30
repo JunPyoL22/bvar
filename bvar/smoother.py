@@ -4,30 +4,7 @@ from numpy.linalg import cholesky, inv
 from bvar.base import Smoother
 from bvar.filter import KalmanFilter
 
-class KalmanFilterForDK(KalmanFilter):
-    '''
-    Attributes
-    - w_hat:
-    - state_hat: smoothered state by DurbinKoopman Disturbance Smoother
-    '''
-
-    def __init__(self, state0=None, state0_var=None):
-        super().__init__(self, state0, state0_var)
-        self.smoother = DisturbanceSmootherDK()
-
-    def filtering(self, y, *, Z=None, H=None, Q=None, T=None, R=None):
-
-        T, R, state = self.get_initial_parameters_in_transition_equation(y, T, R)
-        self.forward_recursion_to_estimate_state(y, Z, state, T, R, H, Q)
-
-        self.smoother.smoothing(y, Z=Z, alpha0=self.state0, P0=self.state0_var, T=T,
-                                R=R, H=H, Q=Q, a=self.state, K=self.K, F=self.F,
-                                L=self.L, v=self.v)
-
-        self.w_hat = self.smoother.w_hat
-        self.state_hat = self.smoother.alpha_hat
-
-class DisturbanceSmootherDK(Smoother):
+class DisturbanceSmoother(Smoother):
 
     def smoothing(self, y, *, Z=None, alpha0=None, P0=None, T=None, R=None,
                   H=None, Q=None, a=None, K=None, F=None, L=None, v=None):
@@ -100,10 +77,11 @@ class DurbinKoopmanSmoother(Smoother):
         -T: nparray, T(t) in (2) Eq for t = 1..t_max
         -R: nparray, R(t) in (2) Eq for t = 1..t_max
     """
-    def __init__(self, state0, state0_var):
+    def __init__(self, state0=None, state0_var=None):
         self.state0 = state0
         self.state0_var = state0_var
-        self.kalmanfilter = KalmanFilterForDK(state0=state0, state0_var=state0_var)
+        self.kalmanfilter = KalmanFilter(state0=state0, state0_var=state0_var)
+        self.smoother = DisturbanceSmoother()
 
     def draw_wplus(self, H, Q):
         ''' w = (e,n)' ~ p(w) 
@@ -131,7 +109,6 @@ class DurbinKoopmanSmoother(Smoother):
         -R: nparray, R(t) in (2) Eq for t = 1..t_max
         '''
         m, k, t = self.m, self.k, self.t
-
         if T is None:
             T = np.eye(k * t)
         if R is None:
@@ -154,40 +131,34 @@ class DurbinKoopmanSmoother(Smoother):
         self.y_plus, self.state_plus = y_plus, state
         return self
 
-    def smoothing(self, y, *, Z=None, alpha0=None, P0=None,
-                  T=None, R=None, H=None, Q=None):
-        '''
-        :param y: nparray, 
-        :param Z: nparray,
-        :param alpha0: nparray, initital value of state
-        :param P0: nparray, initital variance of state
-        :param T: nparray, 
-        :param R: nparray,
-        :param H: nparray,
-        :param Q: nparray,
-        :return: 
-        '''
-
-        self.m, self.t = y.shape
-        self.k, _ = alpha0.shape
-
-        wplus = self.draw_wplus(H, Q)
-        self.state_space_recursion(wplus, Z, T, R)
+    def simulation_smoothing(self, y, *, Z=None, H=None, Q=None, T=None, R=None):
 
         self.kalmanfilter.filtering(y, Z=Z, H=H, Q=Q, T=T, R=R)
-        self.w_hat = self.kalmanfilter.w_hat
-        self.state_hat = self.kalmanfilter.state_hat
+        filtered_state = self.kalmanfilter.state
+        K, F, L, v = self.kalmanfilter.K, self.kalmanfilter.F, \
+                     self.kalmanfilter.L, self.kalmanfilter.v
+        self.smoother.smoothing(y, Z=Z, alpha0=self.state0, P0=self.state0_var, T=T,
+                                R=R, H=H, Q=Q, a=filtered_state, K=K, F=F, L=L, v=v)
+        return self.smoother.w_hat, self.smoother.alpha_hat
+
+    def smoothing(self, y, *, Z=None, T=None, R=None, H=None, Q=None):
+
+        self.m, self.t = y.shape
+        _, self.k = self.Z
+
+        if self.state0 is None:
+            self.state0 = np.zeros((self.k, 1))
+        if self.state0_var is None:
+            self.state0_var = np.zeros((self.k,self.k))
+
+        self.w_hat, self.state_hat = \
+            self.simulation_smoothing(y, Z=Z, H=H, Q=Q, T=T, R=R)
         self.loglik = self.kalmanfilter.loglik
 
-        self.kalmanfilter.filtering(self.yplus, Z=Z, H=H, Q=Q, T=T, R=R)
-        self.w_hat_plus = self.kalmanfilter.w_hat
-        self.state_hat_plus = self.kalmanfilter.state_hat
+        self.state_space_recursion(self.draw_wplus(H, Q), Z, T, R)
+        self.w_hat_plus, self.state_hat_plus = \
+            self.simulation_smoothing(self.y_plus, Z=Z, H=H, Q=Q, T=T, R=R)
 
         self.state_tilda = self.state_hat + self.state_plus - self.state_hat_plus
         return self
-
-
-
-
-
 

@@ -8,6 +8,26 @@ from weakref import WeakKeyDictionary
 from pandas import read_excel, ExcelWriter
 from functools import wraps
 
+def array_checker(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        arr = args[0]
+        if not isinstance(arr, ndarray):
+            arr = atleast_2d(arr)
+        T, N = arr.shape
+        if T < N:
+            arr = arr.T
+        return func(arr,**kwargs)
+    return wrapper
+
+def none_value_check(func):
+    @wraps(func)
+    def wrapper(*args,**kwargs):
+        for name, value in kwargs.items():
+            if value is None:
+                raise ValueError('The keyword input "{0}" must be specified, not None value'.format(name))
+        return func(*args, **kwargs)
+    return wrapper
 
 def is_coefficient_stable(coef, n, l):
     '''
@@ -23,18 +43,6 @@ def is_coefficient_stable(coef, n, l):
     FF[:n, :n * l] = coef.reshape((n * l + 1, n))[:n * l, :n].T  # coef.reshape((n*l+1,n)): 7*3
     ee = max(absolute(eigvals(FF)))
     return ee < 1
-
-def array_checker(func):
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        arr = args[0]
-        if not isinstance(arr, ndarray):
-            arr = atleast_2d(arr)
-        T, N = arr.shape
-        if T < N:
-            arr = arr.T
-        return func(arr,**kwargs)
-    return wrapper
 
 @array_checker
 def get_principle_component(data,k):
@@ -181,30 +189,3 @@ class DotDict(dict):
     __getattr__ = dict.get
     __setattr__ = dict.__setitem__
     __delattr__ = dict.__delitem__
-
-class TransistorVARtoSST:
-    def __init__(self, Y, X, model_lag):
-        '''
-        :param Y: Endogenous variables in VAR
-        :param X: should not have the constant term
-        :param model_lag: lag of VAR model
-        '''
-        self._Y = Y
-        self._X = X
-        self._p = model_lag
-        self._t, self._m = Y.shape
-        self._k = self._m*(self._m*self._p + 1)
-        self._Z = empty((self._t*self._m,self._k))
-
-    def generate_Z(self):
-        for i in range(self._t):
-            z_temp = eye(self._m)
-            for j in range(self._p):
-                X_i = self._X[i:i + 1, j * self._m:(j + 1) * self._m]
-                z_temp = c_[z_temp, kron(eye(self._m), X_i)]
-            try:
-                self._Z[i * self._m:(i + 1) * self._m, :] = z_temp
-            except Exception as e:
-                print(e)
-                raise ValueError('ValueError raised since X in this VAR model has the constant term')
-        return self._Z

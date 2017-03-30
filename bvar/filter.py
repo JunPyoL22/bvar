@@ -71,14 +71,15 @@ class KalmanFilter(Filter):
         :param R: R(t) in (2) Eq for t = 1..t_max
         Attributes
          - state: estimated state using Kalmanfilter
+         - state_var: estimated variance of state using Kalmanfilter
          - loglik: loglikely value
-         - K:
-         - L:
-         - F:
-         - v:
+         - Kt:
+         - Lt:
+         - Ft:
+         - vt:
     '''
 
-    def __init__(self, state0, state0_var):
+    def __init__(self, *, state0=None, state0_var=None):
         '''
         state0: nparray, initial mean, value or vector(1xk) of state when t=1
         state0_var: nparray, initial variance of state, value or matrix(kxk) of state when t=1
@@ -86,8 +87,7 @@ class KalmanFilter(Filter):
         self.state0 = state0
         self.state0_var = state0_var
 
-
-    def filtering(self, y, Z, H, Q, T=None, R=None):
+    def filtering(self, y, *, Z=None, H=None, Q=None, T=None, R=None):
         '''
         (1) Observation Eq: y(t) = Z(t)*state(t) + e(t), e(t) ~ N(0,H(t))
         (2) Transition Eq: state(t) = T(t)*state(t) + R(t)n(t), n(t) ~ N(0,Q(t))
@@ -97,44 +97,45 @@ class KalmanFilter(Filter):
         :param Q: variance of n(t) in (2) Eq for t = 1..t_max
         :param T: T(t) in (2) Eq for t = 1..t_max
         :param R: R(t) in (2) Eq for t = 1..t_max
-        :return: v, F, K, L
         '''
-        T, R, state = self.get_initial_parameters_in_transition_equation(y, T, R)
-        self.forward_recursion_to_estimate_state(y, Z, state, T, R, H, Q)
-        return self
-
-    def get_initial_parameters_in_transition_equation(self, y, T, R):
-        m, t = y.shape
-        k, _ = self.state0.shape
+        self._m, self._t = y.shape
+        self._k, _ = self.state0.shape
 
         if T is None:
-            T = np.eye(k * t)
-
+            T = np.eye(self._k * self._t) #kxt
         if R is None:
-            R = np.eye(k * t)
+            R = np.eye(self._k * self._k) #kxt
+
+        self.forward_recursion_to_estimate_state(y, Z, T, R, H, Q)
+        return self
+
+    def _get_container(self):
+        '''
+        This function set T, R if T and R are None and return them
+        '''
+        m, k, t = self._m, self._k, self._t
 
         if self.state0 is None:
-            a = np.zeros((t + 1, k, 1))
+            state = np.zeros((t + 1, k, 1))
         else:
             if t > k != 1:
                 self.state0 = self.state0.T
-            a = np.atleast_3d(np.r_[self.state0, np.zeros((t, k))])  # t+1xmx1
+            state = np.atleast_3d(np.r_[self.state0, np.zeros((t, k))])  # t+1xmx1
 
         if self.state0_var is None:
-            self.state0_var = np.zeros((k, k))
-        return T, R, a
+            state_var = np.zeros((k, k))
 
-    def forward_recursion_to_estimate_state(self, y, Z, state, T, R, H, Q):
-        m, k, t = self.m, self.k, self.t
-        a = state
-        Pt = self.state0_var  # kxk
+        K = np.zeros((t, k, m))
+        F = np.zeros((t, m, m))
+        L = np.zeros((t, k, k))
+        v = np.zeros((t, k, 1))
+
+        return state, state_var, K, F, L, v
+
+    def forward_recursion_to_estimate_state(self, y, Z, T, R, H, Q):
+        m, k, t = self._m, self._k, self._t
         loglik = 0
-
-        K = np.zeros((t,k,m))
-        F = np.zeros((t,m,m))
-        L = np.zeros((t,k,k))
-        v = np.zeros((t,k,1))
-
+        alpha_t, Pt, Kt, Ft, Lt, vt = self._get_container()
         for i in range(t):
 
             yt = np.atleast_2d(y[:, i]).T  # mx1
@@ -142,18 +143,19 @@ class KalmanFilter(Filter):
             Zt = Z[i * m:(i + 1) * m, :]  # mxk
             Tt = T[i * k:(i + 1) * k, i * k:(i + 1) * k]  # kxk
             Rt = R[i * k:(i + 1) * k, i * k:(i + 1) * k]  # kxk
-            v[i] = yt - np.dot(Zt, a[i])  # mx1
-            F[i, :, :] = np.dot(np.dot(Zt, Pt), Zt.T) + Ht  # mxm
-            K[i, :, :] = np.dot(np.dot(Tt, Pt), np.dot(Zt.T, inv(F[i])))  # kxm
-            L[i, :, :] = Tt - np.dot(K[i], Zt)  # kxk
-            a[i + 1] = np.dot(Tt, a[i]) + np.dot(K[i], v[i])  # kx1
-            Pt = np.dot(np.dot(Tt, Pt), L[i].T) + np.dot(np.dot(Rt, Q), Rt.T)  # kxk
-            loglik = loglik + np.log10(det(F[i])) + np.dot(np.dot(v[i].T, inv(F[i])), v[i])
-
-        self.K = K
-        self.F = F
-        self.L = L
-        self.v = v
+            vt[i] = yt - np.dot(Zt, alpha_t[i])  # mx1
+            Ft[i, :, :] = np.dot(np.dot(Zt, Pt), Zt.T) + Ht  # mxm
+            Kt[i, :, :] = np.dot(np.dot(Tt, Pt), np.dot(Zt.T, inv(Ft[i])))  # kxm
+            Lt[i, :, :] = Tt - np.dot(Kt[i], Zt)  # kxk
+            alpha_t[i + 1] = np.dot(Tt, alpha_t[i]) + np.dot(Kt[i], vt[i])  # kx1
+            Pt = np.dot(np.dot(Tt, Pt), Lt[i].T) + np.dot(np.dot(Rt, Q), Rt.T)  # kxk
+            loglik = loglik + np.log10(det(Ft[i])) + np.dot(np.dot(vt[i].T,
+                                                                   inv(Ft[i])), vt[i])
+        self.K = Kt
+        self.F = Ft
+        self.L = Lt
+        self.v = vt
         self.loglik = -0.5 * loglik
-        self.state = a
+        self.state = alpha_t
+        self.state_var = Pt
         return self
