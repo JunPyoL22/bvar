@@ -20,14 +20,17 @@ def array_checker(func):
         return func(arr,**kwargs)
     return wrapper
 
-def none_value_check(func):
-    @wraps(func)
-    def wrapper(*args,**kwargs):
+class NoneValueChecker(object):
+    def __init__(self, func):
+        self.func = func
+
+    def __call__(self, *args, **kwargs):
         for name, value in kwargs.items():
+            print("key:{0}, value:{1}".format(name,value))
             if value is None:
-                raise ValueError('The keyword input "{0}" must be specified, not None value'.format(name))
-        return func(*args, **kwargs)
-    return wrapper
+                raise ValueError('The keyword input "{0}" must \
+                    be specified, not None value'.format(name))
+        return self.func(*args, **kwargs)
 
 def is_coefficient_stable(coef, n, l):
     '''

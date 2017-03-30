@@ -2,9 +2,9 @@ import numpy as np
 from numpy.linalg import inv, det
 from scipy.sparse import spdiags
 from bvar.base import Filter
+from bvar.util import NoneValueChecker
 
 class HpFilter(Filter):
-    # data = DataChecker()
 
     def __init__(self, penalty_param=None, period_type=None):
 
@@ -78,7 +78,6 @@ class KalmanFilter(Filter):
          - Ft:
          - vt:
     '''
-
     def __init__(self, *, state0=None, state0_var=None):
         '''
         state0: nparray, initial mean, value or vector(1xk) of state when t=1
@@ -87,6 +86,7 @@ class KalmanFilter(Filter):
         self.state0 = state0
         self.state0_var = state0_var
 
+    @NoneValueChecker
     def filtering(self, y, *, Z=None, H=None, Q=None, T=None, R=None):
         '''
         (1) Observation Eq: y(t) = Z(t)*state(t) + e(t), e(t) ~ N(0,H(t))

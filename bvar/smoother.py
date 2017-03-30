@@ -3,9 +3,10 @@ from numpy.random import randn
 from numpy.linalg import cholesky, inv
 from bvar.base import Smoother
 from bvar.filter import KalmanFilter
+from bvar.utils import NoneValueChecker
 
 class DisturbanceSmoother(Smoother):
-
+    @NoneValueChecker
     def smoothing(self, y, *, Z=None, alpha0=None, P0=None, T=None, R=None,
                   H=None, Q=None, a=None, K=None, F=None, L=None, v=None):
         '''
@@ -131,6 +132,7 @@ class DurbinKoopmanSmoother(Smoother):
         self.y_plus, self.state_plus = y_plus, state
         return self
 
+    @NoneValueChecker
     def simulation_smoothing(self, y, *, Z=None, H=None, Q=None, T=None, R=None):
 
         self.kalmanfilter.filtering(y, Z=Z, H=H, Q=Q, T=T, R=R)
@@ -141,6 +143,7 @@ class DurbinKoopmanSmoother(Smoother):
                                 R=R, H=H, Q=Q, a=filtered_state, K=K, F=F, L=L, v=v)
         return self.smoother.w_hat, self.smoother.alpha_hat
 
+    @NoneValueChecker
     def smoothing(self, y, *, Z=None, T=None, R=None, H=None, Q=None):
 
         self.m, self.t = y.shape
