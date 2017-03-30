@@ -87,7 +87,6 @@ class DisturbanceSmootherDK(Smoother):
         self.alpha_hat = alpha_hat
         return self
 
-
 class DurbinKoopmanSmoother(Smoother):
     """
        State Space Recursion Equations
@@ -106,17 +105,19 @@ class DurbinKoopmanSmoother(Smoother):
         self.state0_var = state0_var
         self.kalmanfilter = KalmanFilterForDK(state0=state0, state0_var=state0_var)
 
-    def get_wplus(self, H, Q):
+    def draw_wplus(self, H, Q):
+        ''' w = (e,n)' ~ p(w) 
+            p(w)~N(0, diag{H1, ..., Hn, Q1, ..., Qn})
+        '''
         m, k, t = self.m, self.k, self.t
-        wplus = np.zeros(((m+k)*t,1))
-
+        wplus = np.zeros(((m+k)*t, 1))
+        mean = 0
         for i in range(t):
 
             Hchol = cholesky(H[i*m:(i+1)*m, :])
             Qchol = cholesky(Q[i*k:(i+1)*k, :])
-            #p(w)~N(0, diag{H1, ..., Hn, Q1, ..., Qn})
-            wplus[i*(m+k):i*(m+k)+m, :] = 0 + np.dot(Hchol.T,randn(m,1))
-            wplus[i*(m+k)+m:i*(m+k)+(m+k), :] = 0 + np.dot(Qchol.T, randn(k,1))
+            wplus[i*(m+k):i*(m+k)+m, :] = mean + np.dot(Hchol.T,randn(m,1))
+            wplus[i*(m+k)+m:i*(m+k)+(m+k), :] = mean + np.dot(Qchol.T, randn(k,1))
         return wplus
 
     def state_space_recursion(self, wplus, Z, T=None, R=None):
@@ -170,7 +171,7 @@ class DurbinKoopmanSmoother(Smoother):
         self.m, self.t = y.shape
         self.k, _ = alpha0.shape
 
-        wplus = self.get_wplus(H, Q)
+        wplus = self.draw_wplus(H, Q)
         self.state_space_recursion(wplus, Z, T, R)
 
         self.kalmanfilter.filtering(y, Z=Z, H=H, Q=Q, T=T, R=R)
