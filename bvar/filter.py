@@ -86,7 +86,6 @@ class KalmanFilter(Filter):
         self.state0 = state0
         self.state0_var = state0_var
 
-    @NoneValueChecker
     def filtering(self, y, *, Z=None, H=None, Q=None, T=None, R=None):
         '''
         (1) Observation Eq: y(t) = Z(t)*state(t) + e(t), e(t) ~ N(0,H(t))

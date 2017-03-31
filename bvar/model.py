@@ -371,7 +371,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             elif var_lag == 1:
                 state0 = np.zeros((1, self.state.shape[1]))
             state0_var = np.eye(state0.shape[1])
-            smoother = DurbinKoopmanSmoother(state0, state0_var)
+            dk_smoother = DurbinKoopmanSmoother(state0, state0_var)
 
             self.set_prior(y_i, self.state)
             sigma_i = np.eye(y_i.shape[1])
@@ -402,14 +402,15 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                                                               y_type='univariate')
                 # set terms for state space model
                 Z = np.c_[coef_i, np.zeros((1, self.state.shape[1]))]
-                R = sigma_i
+                H = sigma_i
                 m_var, k_var = state_Y.shape[1], state_X.shape[1]
                 reshaped_state_VAR_coef = np.reshape(state_VAR_coef,(k_var, m_var))
                 T = np.r_[reshaped_state_VAR_coef.T,
                           np.eye(m_var*(var_lag-1), k_var)]
                 Q = np.c_[np.r_[state_VAR_sigma, np.zeros(state_VAR_sigma.shape)],
                           np.r_[np.zeros(state_VAR_sigma.shape), np.zeros(state_VAR_sigma.shape)]]
-                smoother.smoothing()
+                R = np.eye(k_var)
+                state = dk_smoother.smoothing(state_Y, Z=Z, T=T, R=R, H=H, Q=Q).state_tilda[:,:3]
 
                 #update factors
 

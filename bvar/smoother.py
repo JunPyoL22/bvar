@@ -6,7 +6,6 @@ from bvar.filter import KalmanFilter
 from bvar.utils import NoneValueChecker
 
 class DisturbanceSmoother(Smoother):
-    @NoneValueChecker
     def smoothing(self, y, *, Z=None, alpha0=None, P0=None, T=None, R=None,
                   H=None, Q=None, a=None, K=None, F=None, L=None, v=None):
         '''
@@ -42,7 +41,7 @@ class DisturbanceSmoother(Smoother):
             Ht = H[i*p:(i+1)*p, :]
             Rt = R[i*m:(i+1)*m, i*m:(i+1)*m]
             Zt = Z[i*p:(i+1)*p, :]
-            w_hat[i,: p, :] = np.dot(np.dot(Ht, inv(F[i])), v[i]) - np.dot(np.dot(Ht, K[i].T), r[i+1]) #e_hat:px1
+            w_hat[i, : p, :] = np.dot(np.dot(Ht, inv(F[i])), v[i]) - np.dot(np.dot(Ht, K[i].T), r[i+1]) #e_hat:px1
             w_hat[i, p:p+m, :] = np.dot(np.dot(Q, Rt.T), r[i+1]) # n_hat: mx1
             r[i] = np.dot(np.dot(Zt.T, inv(F[i])), v[i]) + np.dot(L[i].T, r[i+1])
 
@@ -71,18 +70,18 @@ class DurbinKoopmanSmoother(Smoother):
        (1) Observation Eq: y(t) = Z(t)*state(t) + e(t) e(t) ~ N(0,H(t))
        (2) Transition Eq: state(t) = T(t)*state(t) + R(t)n(t) n(t) ~ N(0,Q(t))
         - wplus: nparray, drawed random vector w+(w=(e',n')') from density p(w)~N(0,diag{H1,...,Hn,Q1,...,Qn})
-        -m: int, the number of dimension of y
-        -k: int, the number of dimension(elements) in alpha(=state)
-        -t: int, the number of observation time
-        -Z: nparray, Z(t) in (1) Eq for t = 1..t_max
-        -T: nparray, T(t) in (2) Eq for t = 1..t_max
-        -R: nparray, R(t) in (2) Eq for t = 1..t_max
+        - m: int, the number of dimension of y
+        - k: int, the number of dimension(elements) in alpha(=state)
+        - t: int, the number of observation time
+        - Z: nparray, Z(t) in (1) Eq for t = 1..t_max
+        - T: nparray, T(t) in (2) Eq for t = 1..t_max
+        - R: nparray, R(t) in (2) Eq for t = 1..t_max
     """
     def __init__(self, state0=None, state0_var=None):
         self.state0 = state0
         self.state0_var = state0_var
-        self.kalmanfilter = KalmanFilter(state0=state0, state0_var=state0_var)
-        self.smoother = DisturbanceSmoother()
+        self._kalmanfilter = KalmanFilter(state0=state0, state0_var=state0_var)
+        self._smoother = DisturbanceSmoother()
 
     def draw_wplus(self, H, Q):
         ''' w = (e,n)' ~ p(w) 
@@ -132,18 +131,16 @@ class DurbinKoopmanSmoother(Smoother):
         self.y_plus, self.state_plus = y_plus, state
         return self
 
-    @NoneValueChecker
     def simulation_smoothing(self, y, *, Z=None, H=None, Q=None, T=None, R=None):
 
-        self.kalmanfilter.filtering(y, Z=Z, H=H, Q=Q, T=T, R=R)
-        filtered_state = self.kalmanfilter.state
-        K, F, L, v = self.kalmanfilter.K, self.kalmanfilter.F, \
-                     self.kalmanfilter.L, self.kalmanfilter.v
-        self.smoother.smoothing(y, Z=Z, alpha0=self.state0, P0=self.state0_var, T=T,
+        self._kalmanfilter.filtering(y, Z=Z, H=H, Q=Q, T=T, R=R)
+        filtered_state = self._kalmanfilter.state
+        K, F, L, v = self._kalmanfilter.K, self._kalmanfilter.F, \
+                     self._kalmanfilter.L, self._kalmanfilter.v
+        self._smoother.smoothing(y, Z=Z, alpha0=self.state0, P0=self.state0_var, T=T,
                                 R=R, H=H, Q=Q, a=filtered_state, K=K, F=F, L=L, v=v)
-        return self.smoother.w_hat, self.smoother.alpha_hat
+        return self._smoother.w_hat, self._smoother.alpha_hat
 
-    @NoneValueChecker
     def smoothing(self, y, *, Z=None, T=None, R=None, H=None, Q=None):
 
         self.m, self.t = y.shape
@@ -156,7 +153,7 @@ class DurbinKoopmanSmoother(Smoother):
 
         self.w_hat, self.state_hat = \
             self.simulation_smoothing(y, Z=Z, H=H, Q=Q, T=T, R=R)
-        self.loglik = self.kalmanfilter.loglik
+        self.loglik = self._kalmanfilter.loglik
 
         self.state_space_recursion(self.draw_wplus(H, Q), Z, T, R)
         self.w_hat_plus, self.state_hat_plus = \
@@ -164,4 +161,3 @@ class DurbinKoopmanSmoother(Smoother):
 
         self.state_tilda = self.state_hat + self.state_plus - self.state_hat_plus
         return self
-
