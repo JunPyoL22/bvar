@@ -341,7 +341,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             z = standardize(z)
 
         if self.n_factor != 0:
-            self.factors, _ = self.get_principle_component(Y)
+            factors, _ = self.get_principle_component(Y)
 
         self.gibbs_sampling(Y, X, z)
         return self
@@ -358,7 +358,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             y_i_lag = SetupForVAR(lag=lag, const=False).prepare(y_i).X
             z_i_lag = SetupForVAR(lag=lag, const=False).prepare(z_i).X
 
-            self._set_state(y_i_lag, z_i, z_i_lag)
+            self._set_state(factors, y_i_lag, z_i, z_i_lag)
 
             # set state0 and state0_var by VAR model lag(var_lag)
             if var_lag >= 2:
@@ -371,6 +371,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             elif var_lag == 1:
                 state0 = np.zeros((1, self.state.shape[1]))
             state0_var = np.eye(state0.shape[1])
+            
             dk_smoother = DurbinKoopmanSmoother(state0, state0_var)
 
             self.set_prior(y_i, self.state)
@@ -401,7 +402,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                                                               sigma=state_VAR_sigma,
                                                               y_type='univariate')
                 # set terms for state space model
-                Z = np.c_[coef_i, np.zeros((1, self.state.shape[1]))]
+                Z = np.c_[coef_i.T, np.zeros((1, self.state.shape[1]))]
                 H = sigma_i
                 m_var, k_var = state_Y.shape[1], state_X.shape[1]
                 reshaped_state_VAR_coef = np.reshape(state_VAR_coef,(k_var, m_var))
@@ -418,11 +419,11 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                 self._set_state(y_i_lag, z_i, z_i_lag)
                 pass
 
-    def _set_state(self, y_i_lag, z_i, z_i_lag):
+    def _set_state(self, factors, y_i_lag, z_i, z_i_lag):
         if self.lag == 0:
-            self.state = np.c_[self.factors, z_i]
+            self.state = np.c_[factors, z_i]
         elif self.lag > 0:
-            self.state = np.c_[self.factors[self.lag:, :], y_i_lag, z_i, z_i_lag]
+            self.state = np.c_[factors[self.lag:, :], y_i_lag, z_i, z_i_lag]
         return self
 
     def _sampling_from_conditional_posterior(self, *,

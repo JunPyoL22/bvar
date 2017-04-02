@@ -2,7 +2,7 @@ import numpy as np
 from numpy.linalg import inv, det
 from scipy.sparse import spdiags
 from bvar.base import Filter
-from bvar.util import NoneValueChecker
+from bvar.util import NoneValueChecker, DimensionYChecker
 
 class HpFilter(Filter):
 
@@ -86,6 +86,7 @@ class KalmanFilter(Filter):
         self.state0 = state0
         self.state0_var = state0_var
 
+    @DimensionYChecker
     def filtering(self, y, *, Z=None, H=None, Q=None, T=None, R=None):
         '''
         (1) Observation Eq: y(t) = Z(t)*state(t) + e(t), e(t) ~ N(0,H(t))
@@ -98,10 +99,15 @@ class KalmanFilter(Filter):
         :param R: R(t) in (2) Eq for t = 1..t_max
         '''
         self._m, self._t = y.shape
+        
         self._k, _ = self.state0.shape
+        if self._k == 1:
+            self.state0 = self.state0.T #kx1
+            self._k, _ = self.state0.shape 
 
         if T is None:
-            T = np.eye(self._k * self._t) #kxt
+            T = np.eye(self._k)
+            # T = np.eye(self._k * self._t) #kxt
         if R is None:
             R = np.eye(self._k * self._k) #kxt
 
@@ -117,9 +123,8 @@ class KalmanFilter(Filter):
         if self.state0 is None:
             state = np.zeros((t + 1, k, 1))
         else:
-            if t > k != 1:
-                self.state0 = self.state0.T
-            state = np.atleast_3d(np.r_[self.state0, np.zeros((t, k))])  # t+1xmx1
+            state = np.zeros((t+1,k,1))
+            state[0] = self.state
 
         if self.state0_var is None:
             state_var = np.zeros((k, k))
@@ -135,13 +140,19 @@ class KalmanFilter(Filter):
         m, k, t = self._m, self._k, self._t
         loglik = 0
         alpha_t, Pt, Kt, Ft, Lt, vt = self._get_container()
+
         for i in range(t):
 
-            yt = np.atleast_2d(y[:, i]).T  # mx1
-            Ht = H[i * m:(i + 1) * m, :]  # mxm
-            Zt = Z[i * m:(i + 1) * m, :]  # mxk
-            Tt = T[i * k:(i + 1) * k, i * k:(i + 1) * k]  # kxk
-            Rt = R[i * k:(i + 1) * k, i * k:(i + 1) * k]  # kxk
+            yt = y[:, i:i+1]  # mx1
+            Ht, Tt, Rt = H, T, R
+            if m == 1:
+                Zt = Z
+            else:
+                Zt = Z[i * m:(i + 1) * m, :]
+            # Ht = H[i*m:(i + 1)*m, :]  # mxm
+            # Zt = Z[i*m:(i + 1)*m, :]  # mxk
+            # Tt = T[i*k:(i + 1)*k, i*k:(i + 1)*k]  # kxk
+            # Rt = R[i * k:(i + 1) * k, i * k:(i + 1) * k]  # kxk
             vt[i] = yt - np.dot(Zt, alpha_t[i])  # mx1
             Ft[i, :, :] = np.dot(np.dot(Zt, Pt), Zt.T) + Ht  # mxm
             Kt[i, :, :] = np.dot(np.dot(Tt, Pt), np.dot(Zt.T, inv(Ft[i])))  # kxm

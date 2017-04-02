@@ -32,6 +32,19 @@ class NoneValueChecker(object):
                     be specified, not None value'.format(name))
         return self.func(*args, **kwargs)
 
+class DimensionYChecker(object):
+    def __init__(self, func):
+        self.func = func
+
+    def __call__(self, *args, **kwargs):
+        pargs = list()
+        for arg in args:
+            if isinstance(arg, np.ndarray):
+                m, t = arg.shape
+                if m > t: pargs.append(arg.T)
+                else: pargs.append(arg)
+        return self.func(*pargs, **kwargs)
+
 def is_coefficient_stable(coef, n, l):
     '''
         Input

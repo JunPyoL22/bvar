@@ -3,7 +3,7 @@ from numpy.random import randn
 from numpy.linalg import cholesky, inv
 from bvar.base import Smoother
 from bvar.filter import KalmanFilter
-from bvar.utils import NoneValueChecker
+from bvar.utils import NoneValueChecker, DimensionYChecker
 
 class DisturbanceSmoother(Smoother):
     def smoothing(self, y, *, Z=None, alpha0=None, P0=None, T=None, R=None,
@@ -25,24 +25,27 @@ class DisturbanceSmoother(Smoother):
         :param L: nparray,
         :param V: nparray,
         '''
-        self.p, self.t = y.shape
-        self.m, _ = alpha0.shape
+        self.m, self.t = y.shape
+        self.k, _ = alpha0.shape
         self.backward_recursion_to_estimate_w_hat(H, R, Z, v, F, L, K, Q)
         self.forward_recursion_to_estimate_alpha_hat(a, P0, T, R, Q)
         return self
 
     def backward_recursion_to_estimate_w_hat(self, H, R, Z, v, F, L, K, Q):
-        t, m, p = self.t, self.m, self.p
-        w_hat = np.zeros((t, p+m, 1))
-        r = np.zeros((t+1, m, 1))
-
+        t, k, m = self.t, self.k, self.m
+        w_hat = np.zeros((t, m+k, 1))
+        r = np.zeros((t+1, k, 1))
+        Rt = R
         for i in range(t-1, -1, -1):
 
-            Ht = H[i*p:(i+1)*p, :]
-            Rt = R[i*m:(i+1)*m, i*m:(i+1)*m]
-            Zt = Z[i*p:(i+1)*p, :]
-            w_hat[i, : p, :] = np.dot(np.dot(Ht, inv(F[i])), v[i]) - np.dot(np.dot(Ht, K[i].T), r[i+1]) #e_hat:px1
-            w_hat[i, p:p+m, :] = np.dot(np.dot(Q, Rt.T), r[i+1]) # n_hat: mx1
+            if m == 1: 
+                Ht, Zt = H, Z
+            else: 
+                Ht = H[i*m:(i+1)*m, :]
+                Zt = Z[i*m:(i+1)*m, :]
+
+            w_hat[i, : m, :] = np.dot(np.dot(Ht, inv(F[i])), v[i]) - np.dot(np.dot(Ht, K[i].T), r[i+1]) #e_hat:mx1
+            w_hat[i, m:m+k, :] = np.dot(np.dot(Q, Rt.T), r[i+1]) # n_hat: kx1
             r[i] = np.dot(np.dot(Zt.T, inv(F[i])), v[i]) + np.dot(L[i].T, r[i+1])
 
         self.w_hat = w_hat
@@ -50,16 +53,15 @@ class DisturbanceSmoother(Smoother):
         return self
 
     def forward_recursion_to_estimate_alpha_hat(self, a, P0, T, R, Q):
-        t, m, p, r = self.t, self.m, self.p, self.r
-        alpha_hat = np.zeros((t + 1, m, 1))
+        t, k, m = self.t, self.k, self.m
+        alpha_hat = np.zeros((t + 1, k, 1))
         alpha_hat[0] = a[0] + np.dot(P0, r[0])
-
+        
+        Tt = T
+        Rt = R
         for i in range(t):
-
-            Tt = T[i * m:(i + 1) * m, i * m:(i + 1) * m]  # mxm
-            Rt = R[i * m:(i + 1) * m, i * m:(i + 1) * m]
             alpha_hat[i + 1] = np.dot(Tt, alpha_hat[i]) + \
-                               np.dot(np.dot(Rt, Q), np.dot(Rt.T, r[i]))
+                               np.dot(np.dot(Rt, Q), np.dot(Rt.T, self.r[i]))
 
         self.alpha_hat = alpha_hat
         return self
@@ -90,12 +92,15 @@ class DurbinKoopmanSmoother(Smoother):
         m, k, t = self.m, self.k, self.t
         wplus = np.zeros(((m+k)*t, 1))
         mean = 0
+
         for i in range(t):
 
-            Hchol = cholesky(H[i*m:(i+1)*m, :])
-            Qchol = cholesky(Q[i*k:(i+1)*k, :])
-            wplus[i*(m+k):i*(m+k)+m, :] = mean + np.dot(Hchol.T,randn(m,1))
-            wplus[i*(m+k)+m:i*(m+k)+(m+k), :] = mean + np.dot(Qchol.T, randn(k,1))
+            if m == 1: Ht, Qt = H, Q
+            else: Ht, Qt = H[i*m:(i+1)*m, :], Q[i*k:(i+1)*k, :]
+            wplus[i*(m+k):i*(m+k)+m, :] = mean + \
+                                          np.dot(cholesky(Ht).T,randn(m,1))
+            wplus[i*(m+k)+m:i*(m+k)+(m+k), :] = mean + \
+                                                np.dot(cholesky(Qt).T, randn(k,1))
         return wplus
 
     def state_space_recursion(self, wplus, Z, T=None, R=None):
@@ -110,9 +115,9 @@ class DurbinKoopmanSmoother(Smoother):
         '''
         m, k, t = self.m, self.k, self.t
         if T is None:
-            T = np.eye(k * t)
+            Tt = np.eye(k)
         if R is None:
-            R = np.eye(k * t)
+            Rt = np.eye(k)
 
         mk = m + k
         state = np.zeros((k, t + 1))  # assume state0 ~ N(0,P1)
@@ -122,8 +127,6 @@ class DurbinKoopmanSmoother(Smoother):
 
             et = wplus[i * mk:i * mk + m, :]
             nt = wplus[i * mk + m:i * mk + mk, :]
-            Tt = T[i * k:(i + 1) * k, i * k:(i + 1) * k]
-            Rt = R[i * k:(i + 1) * k, i * k:(i + 1) * k]
             Zt = Z[i * m:(i + 1) * m, :]  # mxk
             y_plus[:, i] = (np.dot(Zt, state[:, i]) + et).T  # mx1.T = 1xm
             state[:, i + 1] = (np.dot(Tt, state[:, i]) + np.dot(Rt, nt)).T  # kx1.T = 1xk
@@ -141,9 +144,11 @@ class DurbinKoopmanSmoother(Smoother):
                                 R=R, H=H, Q=Q, a=filtered_state, K=K, F=F, L=L, v=v)
         return self._smoother.w_hat, self._smoother.alpha_hat
 
+    @DimensionYChecker
     def smoothing(self, y, *, Z=None, T=None, R=None, H=None, Q=None):
 
         self.m, self.t = y.shape
+        
         _, self.k = self.Z
 
         if self.state0 is None:
@@ -160,4 +165,56 @@ class DurbinKoopmanSmoother(Smoother):
             self.simulation_smoothing(self.y_plus, Z=Z, H=H, Q=Q, T=T, R=R)
 
         self.state_tilda = self.state_hat + self.state_plus - self.state_hat_plus
+        return self
+
+class CarterKohn(object):
+    
+    def __init__(self, state0, state0_var):
+        self._kalmanfilter = KalmanFilter(state0=state0, state0_var=state0_var)
+        
+    def estimate(self, *, Z=None, H=None, Q=None, T=None, R=None
+                       MU=None, s=None):
+        '''
+            Observation Eq: Y(t) = Z*state(t) + A*z(t) + e(t), var(e(t)) = H
+            Transition Eq:  state(t) = MU + T*state(t-1) + R(t)n(t), var(n(t)) = Q  
+            - state: the kalman filtered state matrix
+            - states_var: variance of the kalman filtered state matrix
+            - mu: constant term in the transition equation
+            - T: coefficients of state in the transition equation 
+            - Q: variance of v(t) in the transition equation
+            - s: number of specific variables to extract 
+            result:
+            - generates drawed_state: sampling state matrix from normal
+        '''
+        self._kalmanfilter.filtering(y, Z=Z, H=H, Q=Q, T=T, R=R)
+        state = self._kalmanfilter.state
+        state_var = self._kalmanfilter.state_var
+
+        t, ns = state.shape
+        if t < ns:
+            state = state.T
+            t, ns = state.shape
+        if s is None: 
+            s = ns
+        if MU is None:
+            MU = np.zeros((1,ns))
+            
+        drawed_state = np.zeros((t,ns))
+        wa = randn(t,ns)
+        f = T[:s,:] #sxns
+        q = Q[:s,:s]
+        mu = MU[:,:s]
+        p00 = np.squeeze(state_var[t-1,:s,:s])
+        drawed_state[t-1,:s] = state[t-1,:s] + np.dot(wa[t-1,:s],cholx(p00))
+
+        for i in range(t-2,0,-1):
+            
+            pt = squeeze(state_var[i,:,:]) # nsxns
+            temp = np.dot(np.dot(pt,f.T),inv(np.dot(np.dot(f,pt),f.T))+q)
+            mean = state[i,:] + np.dot(temp,(drawed_state[i+1,:s]-
+                                             mu-np.dot(state[i,:],f.T)).T).T
+            variance = pt - np.dot(temp,np.dot(f,pt))
+            drawed_state[i,:s] = mean[:,:s] + np.dot(wa[i,:s],cholx(variance[:s,:s]))
+        
+        self.drawed_state = drawed_state[:,:s]
         return self
