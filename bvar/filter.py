@@ -144,11 +144,13 @@ class KalmanFilter(Filter):
         for i in range(t):
 
             yt = y[:, i:i+1]  # mx1
-            Ht, Tt, Rt = H, T, R
+            Tt, Rt = T, R
             if m == 1:
                 Zt = Z
+                Ht = H
             else:
                 Zt = Z[i * m:(i + 1) * m, :]
+                Ht = H[i*m:(i + 1)*m, :]  # mxm
             # Ht = H[i*m:(i + 1)*m, :]  # mxm
             # Zt = Z[i*m:(i + 1)*m, :]  # mxk
             # Tt = T[i*k:(i + 1)*k, i*k:(i + 1)*k]  # kxk

@@ -55,7 +55,7 @@ class DisturbanceSmoother(Smoother):
     def forward_recursion_to_estimate_alpha_hat(self, a, P0, T, R, Q):
         t, k, m = self.t, self.k, self.m
         alpha_hat = np.zeros((t + 1, k, 1))
-        alpha_hat[0] = a[0] + np.dot(P0, r[0])
+        alpha_hat[0] = a[0] + np.dot(P0, self.r[0])
         
         Tt = T
         Rt = R
@@ -85,7 +85,7 @@ class DurbinKoopmanSmoother(Smoother):
         self._kalmanfilter = KalmanFilter(state0=state0, state0_var=state0_var)
         self._smoother = DisturbanceSmoother()
 
-    def draw_wplus(self, H, Q):
+    def draw_wplus(self, H, Q, s):
         ''' w = (e,n)' ~ p(w) 
             p(w)~N(0, diag{H1, ..., Hn, Q1, ..., Qn})
         '''
@@ -95,8 +95,10 @@ class DurbinKoopmanSmoother(Smoother):
 
         for i in range(t):
 
-            if m == 1: Ht, Qt = H, Q
-            else: Ht, Qt = H[i*m:(i+1)*m, :], Q[i*k:(i+1)*k, :]
+            if m == 1: Ht = H
+                # Ht, Qt = H, Q
+            else: Ht = H[i*m:(i+1)*m, :], 
+            Qt = Q[:s,:s][i*k:(i+1)*k, :]
             wplus[i*(m+k):i*(m+k)+m, :] = mean + \
                                           np.dot(cholesky(Ht).T,randn(m,1))
             wplus[i*(m+k)+m:i*(m+k)+(m+k), :] = mean + \
@@ -134,7 +136,7 @@ class DurbinKoopmanSmoother(Smoother):
         self.y_plus, self.state_plus = y_plus, state
         return self
 
-    def simulation_smoothing(self, y, *, Z=None, H=None, Q=None, T=None, R=None):
+    def simulation_smoothing(self, y, *, Z=None, H=None, Q=None, T=None, R=None, s=None):
 
         self._kalmanfilter.filtering(y, Z=Z, H=H, Q=Q, T=T, R=R)
         filtered_state = self._kalmanfilter.state
@@ -145,7 +147,7 @@ class DurbinKoopmanSmoother(Smoother):
         return self._smoother.w_hat, self._smoother.alpha_hat
 
     @DimensionYChecker
-    def smoothing(self, y, *, Z=None, T=None, R=None, H=None, Q=None):
+    def smoothing(self, y, *, Z=None, T=None, R=None, H=None, Q=None, s=None):
 
         self.m, self.t = y.shape
         
@@ -157,12 +159,12 @@ class DurbinKoopmanSmoother(Smoother):
             self.state0_var = np.zeros((self.k,self.k))
 
         self.w_hat, self.state_hat = \
-            self.simulation_smoothing(y, Z=Z, H=H, Q=Q, T=T, R=R)
+            self.simulation_smoothing(y, Z=Z, H=H, Q=Q, T=T, R=R, s=s)
         self.loglik = self._kalmanfilter.loglik
 
-        self.state_space_recursion(self.draw_wplus(H, Q), Z, T, R)
+        self.state_space_recursion(self.draw_wplus(H, Q, s), Z, T, R)
         self.w_hat_plus, self.state_hat_plus = \
-            self.simulation_smoothing(self.y_plus, Z=Z, H=H, Q=Q, T=T, R=R)
+            self.simulation_smoothing(self.y_plus, Z=Z, H=H, Q=Q, T=T, R=R, s=s)
 
         self.state_tilda = self.state_hat + self.state_plus - self.state_hat_plus
         return self
