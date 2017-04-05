@@ -333,7 +333,6 @@ class FactorAugumentedVARX(BayesianLinearRegression):
         '''Assume Y, X has right form for VAR model to estimate
         must include or implement checking Y, X has right form to estimate'''
         t, m = Y.shape
-        k = X.shape[1]
 
         if self.is_standardize is False:
             Y = standardize(Y)
@@ -343,8 +342,34 @@ class FactorAugumentedVARX(BayesianLinearRegression):
         if self.n_factor != 0:
             factors, _ = self.get_principle_component(Y)
 
-        self.gibbs_sampling(Y, X, z)
+        self.gibbs_sampling(Y, z, factors)
         return self
+
+    def _gibbs_sampling(self, Y, z, factors):
+        lag = self.lag
+        var_lag = self.var_lag
+
+        for i in range(self.n_iter):
+            pass
+            for ind in range(Y.shape[1]):
+                y_i = Y[:, ind: ind + 1][lag:, :]
+                z_i = z[:, ind: ind + 1][lag:, :]
+                y_i_lag = SetupForVAR(lag=lag, const=False).prepare(y_i).X
+                z_i_lag = SetupForVAR(lag=lag, const=False).prepare(z_i).X
+
+                x = self._get_factor_loading_regressor(factors, y_i_lag, z_i, z_i_lag)
+
+                sigma0 = np.eye(y_i.shape[1])
+                coef_i, sigma_i = self._get_factor_loadings(y_i, x, sigma0)
+
+    def _get_factor_loadings(self, y, x, sigma0):
+        sigma_i = sigma0
+        ols = self.fit(y, x, method='ls')
+        coef_i, sigma_i = \
+            self._sampling_from_conditional_posterior(coef_ols=ols.coef,
+                                                      sigam=sigma_i,
+                                                      y_type='univariate')
+        return coef_i, sigma_i
 
     def gibbs_sampling(self, Y, X, z, sigma_i):
 
@@ -418,6 +443,14 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                 #reset state using updated factors
                 self._set_state(y_i_lag, z_i, z_i_lag)
                 pass
+
+    def _get_factor_loading_regressor(self, factors, y_i_lag, z_i, z_i_lag):
+        if self.lag == 0:
+            regressor = np.c_[factors, z_i]
+        elif self.lag > 0:
+            regressor = np.c_[factors[self.lag:, :], y_i_lag, z_i, z_i_lag]
+        return regressor
+
 
     def _set_state(self, factors, y_i_lag, z_i, z_i_lag):
         if self.lag == 0:
