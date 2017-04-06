@@ -372,8 +372,13 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                 self._hold_drawed_factor_loadings(coef_i, ind, m)
                 self._r[ind:ind+1, 1] = sigma_i
 
-            # Sst STATE VAR model for update factors
-                
+            # Set STATE VAR model for update factors
+            setup_var = SetupForVAR(lag=self.var_lag, const=False)
+            t = setup_var.t
+            state_Y = np.c_[setup_var.prepare(factors).Y, np.ones((t,1)), np.ones((t,1))]
+            state_X = np.c_[setup_var.prepare(state_Y).X]
+            H = np.diag(self._r[:, 0])
+
 
     def _get_W(self, w, m):
         W = np.empty((2*m,m))
@@ -437,7 +442,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             ols = self.fit(y_i, self.state, method='ls')
 
             # Data setup for the VAR transition equation of State Space Model
-            setup_VAR = SetupForVAR(lag=var_lag, const=False)
+            setup_VAR = SetupForVAR(lag=var_lag, const=False).prepare()
 
             for i in range(self.n_iter):
 
