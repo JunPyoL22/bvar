@@ -329,7 +329,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
         #                                       V0=np.eye(x.shape[1]), V0_scale=1,
         #                                       v0=0, S0=0).set_prior(y, x)
 
-    def estimate(self, Y, X, z):
+    def estimate(self, Y, X, z, w):
         '''Assume Y, X has right form for VAR model to estimate
         must include or implement checking Y, X has right form to estimate'''
         t, m = Y.shape
@@ -342,25 +342,48 @@ class FactorAugumentedVARX(BayesianLinearRegression):
         if self.n_factor != 0:
             factors, _ = self.get_principle_component(Y)
 
+        self._W = self._get_W(w, m)
         self.gibbs_sampling(Y, z, factors)
         return self
 
-    def _gibbs_sampling(self, Y, z, factors):
+    def _gibbs_sampling(self, Y, z, w, factors):
+        m = Y.shape[1]
         lag = self.lag
         var_lag = self.var_lag
 
         for i in range(self.n_iter):
-            pass
+            self._A = np.empty((m, 2))
+            self._B = np.empty((m, 2*lag))
+            self._G = np.empty((m, m))
+            self._H = np.empty((m, m*lag))
+            self._Psi = np.empty((m, self.n_factor))
+            self._r = np.empty((m, 1))
+
             for ind in range(Y.shape[1]):
                 y_i = Y[:, ind: ind + 1][lag:, :]
                 z_i = z[:, ind: ind + 1][lag:, :]
                 y_i_lag = SetupForVAR(lag=lag, const=False).prepare(y_i).X
                 z_i_lag = SetupForVAR(lag=lag, const=False).prepare(z_i).X
 
-                x = self._get_factor_loading_regressor(factors, y_i_lag, z_i, z_i_lag)
+                x = self._get_factor_loading_regressor(y_i_lag, z_i, z_i_lag, factors)
 
                 sigma0 = np.eye(y_i.shape[1])
                 coef_i, sigma_i = self._get_factor_loadings(y_i, x, sigma0)
+                self._hold_drawed_factor_loadings(coef_i, ind, m)
+                self._r[ind:ind+1, 1] = sigma_i
+
+            # Sst STATE VAR model for update factors
+                
+
+    def _get_W(self, w, m):
+        W = np.empty((2*m,m))
+        w_1 = np.zeros((1,m))
+        for i in range(m):
+            w_1[:,i:i+1] = 1
+            w_2 = w[i,i+1,:]
+            w_2[:,i:i+1] = 0
+            W[i:(i+1)*2,:] = np.r_[w_1, w_2]
+        return W
 
     def _get_factor_loadings(self, y, x, sigma0):
         sigma_i = sigma0
@@ -370,6 +393,16 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                                                       sigam=sigma_i,
                                                       y_type='univariate')
         return coef_i, sigma_i
+
+    def _hold_drawed_factor_loadings(self, coef, n, m):
+        self._A[n:n+1,:] = np.c_[1,-1*coef[self.lag,:]]
+        self._G[n:n + 1, :] = np.dot(self._A[n:n+1,:],
+                                     self._W[n:n+1, :])
+        for i in range(self.lag):
+            self._B[n:n+1, i*2:(i+1)*2] = np.c_[coef[i, :],\
+                                                coef[i+self.lag+1, :]]
+            self._H[n:n+1, i*m:(i+1)*m] = np.dot(self._B[n:n+1, 2*i:2*(i+1)],
+                                                 self._W[n:n+1, :])
 
     def gibbs_sampling(self, Y, X, z, sigma_i):
 
