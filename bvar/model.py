@@ -331,7 +331,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
 
     def estimate(self, Y, X, z, w):
         '''Assume Y, X has right form for VAR model to estimate
-        must include or implement checking Y, X has right form to estimate'''
+           must include or implement checking dimension of Y, X for estimating'''
         t, m = Y.shape
 
         if self.is_standardize is False:
@@ -358,6 +358,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             self._H = np.empty((m, m*lag))
             self._Psi = np.empty((m, self.n_factor))
             self._r = np.empty((m, 1))
+            self._Gamma = np.empty((m, m*lag))
 
             for ind in range(Y.shape[1]):
                 y_i = Y[:, ind: ind + 1][lag:, :]
@@ -379,7 +380,6 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             state_X = np.c_[setup_var.prepare(state_Y).X]
             H = np.diag(self._r[:, 0])
 
-
     def _get_W(self, w, m):
         W = np.empty((2*m,m))
         w_1 = np.zeros((1,m))
@@ -395,7 +395,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
         ols = self.fit(y, x, method='ls')
         coef_i, sigma_i = \
             self._sampling_from_conditional_posterior(coef_ols=ols.coef,
-                                                      sigam=sigma_i,
+                                                      sigma=sigma_i,
                                                       y_type='univariate')
         return coef_i, sigma_i
 
@@ -408,6 +408,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                                                 coef[i+self.lag+1, :]]
             self._H[n:n+1, i*m:(i+1)*m] = np.dot(self._B[n:n+1, 2*i:2*(i+1)],
                                                  self._W[n:n+1, :])
+            self._Gamma = inv(self._Gamma)
 
     def gibbs_sampling(self, Y, X, z, sigma_i):
 
@@ -449,7 +450,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                 # sampling factor loads
                 coef_i, sigma_i = \
                     self._sampling_from_conditional_posterior(coef_ols=ols.coef,
-                                                              sigam=sigma_i,
+                                                              sigma=sigma_i,
                                                               y_type='univariate')
 
                 # Set prior for VAR(state transition equation) sampling
