@@ -23,7 +23,7 @@ class Sampler(object):
         '''
         return: nparray, drawed array, kmx1 
         '''
-        from bvar.utils import cholx
+        from utils import cholx
         km = mean.shape[0]
         return mean + np.dot(cholx(variance).T, randn(km, 1))
 

@@ -1,6 +1,6 @@
-import numpy as np
 from abc import ABCMeta, abstractmethod
 from scipy.linalg import lstsq
+import numpy as np
 
 class BaseLinearRegression(object):
 
@@ -76,16 +76,17 @@ class SetupForVAR(object):
             else:
                 self.t += data.t - self.forecast_horizon
         else:
-            self.Y = Y[self.lag:,:]
+            self.Y = Y[self.lag:, :]
             self._setup_X_on_VAR(Y, const=self.const)
             self.t += Y.shape[0]
         return self
 
     def _setup_Y_for_forecasting(self, Y):
-        return SetupForForecasting(self.forecast_method, self.forecast_horizon).get_data(Y, self.lag)
+        return SetupForForecasting(self.forecast_method,
+                                   self.forecast_horizon).get_data(Y, self.lag)
 
     def _setup_X_on_VAR(self, Y, const):
-        from bvar.utils import lag
+        from utils import lag
         '''
         :param const: include a constant column in X or Not
         '''
@@ -97,7 +98,7 @@ class SetupForVAR(object):
             x = np.append(x, x_lag, axis=1)
         if const:
             x = np.c_[np.ones((t - p, 1)), x]
-        self.X = x   
+        self.X = x
         return self
 
     def __is_forecasting(self, forecast_method, forecast_horizon):

@@ -61,7 +61,7 @@ def is_coefficient_stable(coef, n, l):
     return ee < 1
 
 @array_checker
-def get_principle_component(data,k):
+def get_principle_component(data, k):
     '''
     Input:
      - data: matrix data(TxN , N:number of variable,dimension) with column mean zero
@@ -71,11 +71,11 @@ def get_principle_component(data,k):
      -lamda: loadings
     '''
     T, N = data.shape
-    xx = dot(data.T,data)
+    xx = dot(data.T, data)
     eval, evec = eig(xx) # NxN
-    index = argsort(eval,axis=0)[::-1] # sorting index of eigenvalues from the highest to the loweset eigenvalue
-    sorted_eval = sort(eval,axis=0)[::-1] # sorting eigenvalues from the highest to the loweset one
-    reord_evec = evec[:,index]
+    index = argsort(eval, axis=0)[::-1] # sorting index of eigenvalues from the highest to the loweset eigenvalue
+    sorted_eval = sort(eval, axis=0)[::-1] # sorting eigenvalues from the highest to the loweset one
+    reord_evec = evec[:, index]
     lamda = sqrt(N)*reord_evec[:,:k] # NxK
     factor = dot(data,lamda)/N #Transfromed data TxN * NxK = TxK
     return factor, lamda

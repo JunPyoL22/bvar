@@ -346,7 +346,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
         self.gibbs_sampling(Y, z, factors)
         return self
 
-    def _gibbs_sampling(self, Y, z, w, factors):
+    def gibbs_sampling(self, Y, z, w, factors):
         m = Y.shape[1]
         lag = self.lag
         var_lag = self.var_lag
@@ -358,9 +358,9 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             self._H = np.empty((m, m*lag))
             self._Psi = np.empty((m, self.n_factor))
             self._r = np.empty((m, 1))
-            self._Gamma = np.empty((m, m*lag))
+            self._F = np.empty((m, m*lag))
 
-            for ind in range(Y.shape[1]):
+            for ind in range(m):
                 y_i = Y[:, ind: ind + 1][lag:, :]
                 z_i = z[:, ind: ind + 1][lag:, :]
                 y_i_lag = SetupForVAR(lag=lag, const=False).prepare(y_i).X
@@ -369,48 +369,96 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                 x = self._get_factor_loading_regressor(y_i_lag, z_i, z_i_lag, factors)
 
                 sigma0 = np.eye(y_i.shape[1])
-                coef_i, sigma_i = self._get_factor_loadings(y_i, x, sigma0)
+                coef_i, sigma_i = self.sampling_parameters(y_i, x, sigma0)
                 self._hold_drawed_factor_loadings(coef_i, ind, m)
-                self._r[ind:ind+1, 1] = sigma_i
+                self._r[ind:ind+1, :] = sigma_i
+
+            invG = inv(self._G)
+            for i in range(lag):
+                self._F[:, i*2:(i+1)*2] = np.dot(invG, self._H[:, i*2:(i+1)*2])
+            self._Gamma = np.dot(invG, self._Psi) #mxn_factor
+            self._St = np.dot(invG, self._r) #mx1
 
             # Set STATE VAR model for update factors
-            setup_var = SetupForVAR(lag=self.var_lag, const=False)
-            t = setup_var.t
-            state_Y = np.c_[setup_var.prepare(factors).Y, np.ones((t,1)), np.ones((t,1))]
-            state_X = np.c_[setup_var.prepare(state_Y).X]
-            H = np.diag(self._r[:, 0])
+            state = np.c_[factors, np.ones(factors.shape[0], 1),
+                          np.ones(factors.shape[0], 1)]
+            setup_var = SetupForVAR(lag=self.var_lag, const=False).prepare(state)
+            state_Y = setup_var.Y
+            state_X = setup_var.X
 
-    def _get_W(self, w, m):
-        W = np.empty((2*m,m))
-        w_1 = np.zeros((1,m))
-        for i in range(m):
-            w_1[:,i:i+1] = 1
-            w_2 = w[i,i+1,:]
-            w_2[:,i:i+1] = 0
-            W[i:(i+1)*2,:] = np.r_[w_1, w_2]
-        return W
+            coef, sigma = self.sampling_parameters(state_Y, state_X,
+                                                   np.eye(state_Y.shape[1]))
 
-    def _get_factor_loadings(self, y, x, sigma0):
+            # set state0 and state0_var by VAR model lag(var_lag)
+            Z = self._Gamma
+            for i in range(var_lag):
+                temp_lag = np.dot(self._F,
+                                  state_X[:, i*var_lag:(i+1)*var_lag])
+                Z = np.append(Z, temp_lag, axis=1)
+            H = np.diag(self._St[:, 0])
+            m_var, k_var = state_Y.shape[1], state_X.shape[1]
+            reshaped_coef = np.reshape(coef, (m_var, k_var))
+            T = np.r_[reshaped_coef.T,
+                      np.eye(m_var*(var_lag-1), k_var)]
+            Q = np.c_[np.r_[sigma, np.zeros(sigma.shape)],
+                      np.r_[np.zeros(sigma.shape), np.zeros(sigma.shape)]]
+            R = np.eye(k_var)
+            state0, \
+            state0_var = self._get_initial_value_of_state(state, var_lag)
+            state = DurbinKoopmanSmoother(state0, state0_var). \
+                                                smoothing(state_Y, Z=Z, T=T,
+                                                          R=R, H=H, Q=Q).state_tilda[:, :3]
+
+    def sampling_parameters(self, y, x, sigma0):
+        y_type = 'multivariate'
+        if y.shape[1] == 1:
+            y_type = 'univairate'
         sigma_i = sigma0
         ols = self.fit(y, x, method='ls')
-        coef_i, sigma_i = \
+        coef, sigma = \
             self._sampling_from_conditional_posterior(coef_ols=ols.coef,
                                                       sigma=sigma_i,
-                                                      y_type='univariate')
-        return coef_i, sigma_i
+                                                      y_type=y_type)
+    def _get_W(self, w, m):
+        W = np.empty((2*m, m))
+        w_1 = np.zeros((1, m))
+        for i in range(m):
+            w_1[:, i:i+1] = 1
+            w_2 = w[i:i+1, :]
+            w_2[:, i:i+1] = 0
+            W[i:(i+1)*2, :] = np.r_[w_1, w_2]
+        return W
+
+        return coef, sigma
 
     def _hold_drawed_factor_loadings(self, coef, n, m):
-        self._A[n:n+1,:] = np.c_[1,-1*coef[self.lag,:]]
-        self._G[n:n + 1, :] = np.dot(self._A[n:n+1,:],
-                                     self._W[n:n+1, :])
+        self._A[n:n+1, :] = np.c_[1, -1*coef[self.lag, :]]
+        self._G[n:n+1, :] = np.dot(self._A[n:n+1, :],
+                                   self._W[n:n+1, :])
         for i in range(self.lag):
             self._B[n:n+1, i*2:(i+1)*2] = np.c_[coef[i, :],\
                                                 coef[i+self.lag+1, :]]
             self._H[n:n+1, i*m:(i+1)*m] = np.dot(self._B[n:n+1, 2*i:2*(i+1)],
                                                  self._W[n:n+1, :])
-            self._Gamma = inv(self._Gamma)
+            self._F[:, i*2:(i+1)*2] = np.dot(inv(self._G),
+                                             self._H[:, i*2:(i+1)*2])
+        return self
 
-    def gibbs_sampling(self, Y, X, z, sigma_i):
+    def _get_initial_value_of_state(state, lag):
+        if lag >= 2:
+            temp0 = np.empty((1, 0))
+
+            for i in range(lag-1, 0, -1):
+                temp0 = np.append(temp0, state[i-1:i, :])
+            state0 = np.c_[temp0, np.zeros((1, state.shape[1]))]
+
+        elif lag == 1:
+            state0 = np.zeros((1, state.shape[1]))
+        state0_var = np.eye(state0.shape[1])
+        return state0, state0_var
+
+
+    def _gibbs_sampling(self, Y, X, z, sigma_i):
 
         lag = self.lag
         var_lag = self.var_lag
@@ -435,7 +483,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             elif var_lag == 1:
                 state0 = np.zeros((1, self.state.shape[1]))
             state0_var = np.eye(state0.shape[1])
-            
+
             dk_smoother = DurbinKoopmanSmoother(state0, state0_var)
 
             self.set_prior(y_i, self.state)
@@ -469,13 +517,13 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                 Z = np.c_[coef_i.T, np.zeros((1, self.state.shape[1]))]
                 H = sigma_i
                 m_var, k_var = state_Y.shape[1], state_X.shape[1]
-                reshaped_state_VAR_coef = np.reshape(state_VAR_coef,(k_var, m_var))
+                reshaped_state_VAR_coef = np.reshape(state_VAR_coef, (k_var, m_var))
                 T = np.r_[reshaped_state_VAR_coef.T,
                           np.eye(m_var*(var_lag-1), k_var)]
                 Q = np.c_[np.r_[state_VAR_sigma, np.zeros(state_VAR_sigma.shape)],
                           np.r_[np.zeros(state_VAR_sigma.shape), np.zeros(state_VAR_sigma.shape)]]
                 R = np.eye(k_var)
-                state = dk_smoother.smoothing(state_Y, Z=Z, T=T, R=R, H=H, Q=Q).state_tilda[:,:3]
+                state = dk_smoother.smoothing(state_Y, Z=Z, T=T, R=R, H=H, Q=Q).state_tilda[:, :3]
 
                 #update factors
 
