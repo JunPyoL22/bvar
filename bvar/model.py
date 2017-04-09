@@ -374,15 +374,16 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                 self._r[ind:ind+1, :] = sigma_i
 
             invG = inv(self._G)
-            for i in range(lag):
-                self._F[:, i*2:(i+1)*2] = np.dot(invG, self._H[:, i*2:(i+1)*2])
+            for i in range(1, lag+1):
+                self._F[:, (i-1)*m:i*m] = np.dot(invG, self._H[:, (i-1)*m:i*m]) #mxm
+
             self._Gamma = np.dot(invG, self._Psi) #mxn_factor
             self._St = np.dot(invG, self._r) #mx1
 
             # Set STATE VAR model for update factors
             state = np.c_[factors, np.ones(factors.shape[0], 1),
                           np.ones(factors.shape[0], 1)]
-            setup_var = SetupForVAR(lag=self.var_lag, const=False).prepare(state)
+            setup_var = SetupForVAR(lag=var_lag, const=False).prepare(state)
             state_Y = setup_var.Y
             state_X = setup_var.X
 
@@ -391,9 +392,9 @@ class FactorAugumentedVARX(BayesianLinearRegression):
 
             # set state0 and state0_var by VAR model lag(var_lag)
             Z = self._Gamma
-            for i in range(var_lag):
-                temp_lag = np.dot(self._F,
-                                  state_X[:, i*var_lag:(i+1)*var_lag])
+            for i in range(1, lag+1):
+                temp_lag = np.dot(SetupForVAR(lag=i, const=False).prepare(Y).X,
+                                  self._F[:, (i-1)*m:i*m])
                 Z = np.append(Z, temp_lag, axis=1)
             H = np.diag(self._St[:, 0])
             m_var, k_var = state_Y.shape[1], state_X.shape[1]
@@ -419,6 +420,8 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             self._sampling_from_conditional_posterior(coef_ols=ols.coef,
                                                       sigma=sigma_i,
                                                       y_type=y_type)
+        return coef, sigma
+
     def _get_W(self, w, m):
         W = np.empty((2*m, m))
         w_1 = np.zeros((1, m))
@@ -429,19 +432,17 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             W[i:(i+1)*2, :] = np.r_[w_1, w_2]
         return W
 
-        return coef, sigma
-
     def _hold_drawed_factor_loadings(self, coef, n, m):
         self._A[n:n+1, :] = np.c_[1, -1*coef[self.lag, :]]
         self._G[n:n+1, :] = np.dot(self._A[n:n+1, :],
-                                   self._W[n:n+1, :])
+                                   self._W[2*n:2*(n+1), :])
+        self._Psi[n:n+1, :] = coef[-self.n_factor:, :].T
+
         for i in range(self.lag):
-            self._B[n:n+1, i*2:(i+1)*2] = np.c_[coef[i, :],\
+            self._B[n:n+1, i*2:(i+1)*2] = np.c_[coef[i, :],
                                                 coef[i+self.lag+1, :]]
             self._H[n:n+1, i*m:(i+1)*m] = np.dot(self._B[n:n+1, 2*i:2*(i+1)],
-                                                 self._W[n:n+1, :])
-            self._F[:, i*2:(i+1)*2] = np.dot(inv(self._G),
-                                             self._H[:, i*2:(i+1)*2])
+                                                 self._W[2*n:2*(n+1), :])
         return self
 
     def _get_initial_value_of_state(state, lag):
