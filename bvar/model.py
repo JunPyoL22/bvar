@@ -380,22 +380,24 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             self._Gamma = np.dot(invG, self._Psi) #mxn_factor
             self._St = np.dot(invG, self._r) #mx1
 
+            FX = dict()
+            for i in range(1, lag+1):
+                var_setup = SetupForVAR(lag=i, const=False).prepare(Y)
+                FX[i] = np.dot(var_setup.X,
+                               self._F[:, (i-1)*m:i*m]).sum(axis=1).reshape(var_setup.t, 1)
             # Set STATE VAR model for update factors
-            state = np.c_[factors, np.ones(factors.shape[0], 1),
-                          np.ones(factors.shape[0], 1)]
-            setup_var = SetupForVAR(lag=var_lag, const=False).prepare(state)
-            state_Y = setup_var.Y
-            state_X = setup_var.X
+            state = np.c_[factors[lag:, :]]
+            for i in range(1, lag+1):
+                state = np.append(state, FX[i][lag-i:, :])
+
+            var_setup = SetupForVAR(lag=var_lag, const=False).prepare(state)
+            state_Y = var_setup.Y
+            state_X = var_setup.X
 
             coef, sigma = self.sampling_parameters(state_Y, state_X,
                                                    np.eye(state_Y.shape[1]))
 
-            # set state0 and state0_var by VAR model lag(var_lag)
-            Z = self._Gamma
-            for i in range(1, lag+1):
-                temp_lag = np.dot(SetupForVAR(lag=i, const=False).prepare(Y).X,
-                                  self._F[:, (i-1)*m:i*m])
-                Z = np.append(Z, temp_lag, axis=1)
+            Z = np.c_[self._Gamma, np.ones((m, 1)), np.ones((m, 1))]
             H = np.diag(self._St[:, 0])
             m_var, k_var = state_Y.shape[1], state_X.shape[1]
             reshaped_coef = np.reshape(coef, (m_var, k_var))
