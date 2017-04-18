@@ -1,9 +1,9 @@
 import numpy as np
 from numpy.random import randn
 from numpy.linalg import cholesky, inv
-from bvar.base import Smoother
-from bvar.filter import KalmanFilter
-from bvar.utils import NoneValueChecker, DimensionYChecker
+from base import Smoother
+from filter import KalmanFilter
+from utils import NoneValueChecker, DimensionYChecker
 
 class DisturbanceSmoother(Smoother):
     def smoothing(self, y, *, Z=None, alpha0=None, P0=None, T=None, R=None,
@@ -38,9 +38,9 @@ class DisturbanceSmoother(Smoother):
         Rt = R
         for i in range(t-1, -1, -1):
 
-            if m == 1: 
+            if m == 1:
                 Ht, Zt = H, Z
-            else: 
+            else:
                 Ht = H[i*m:(i+1)*m, :]
                 Zt = Z[i*m:(i+1)*m, :]
 
@@ -56,7 +56,7 @@ class DisturbanceSmoother(Smoother):
         t, k, m = self.t, self.k, self.m
         alpha_hat = np.zeros((t + 1, k, 1))
         alpha_hat[0] = a[0] + np.dot(P0, self.r[0])
-        
+
         Tt = T
         Rt = R
         for i in range(t):
@@ -170,21 +170,21 @@ class DurbinKoopmanSmoother(Smoother):
         return self
 
 class CarterKohn(object):
-    
+
     def __init__(self, state0, state0_var):
         self._kalmanfilter = KalmanFilter(state0=state0, state0_var=state0_var)
-        
-    def estimate(self, *, Z=None, H=None, Q=None, T=None, R=None
-                       MU=None, s=None):
+
+    def estimate(self, *, Z=None, H=None, Q=None, T=None, R=None,
+                 MU=None, s=None):
         '''
             Observation Eq: Y(t) = Z*state(t) + A*z(t) + e(t), var(e(t)) = H
-            Transition Eq:  state(t) = MU + T*state(t-1) + R(t)n(t), var(n(t)) = Q  
+            Transition Eq:  state(t) = MU + T*state(t-1) + R(t)n(t), var(n(t)) = Q
             - state: the kalman filtered state matrix
             - states_var: variance of the kalman filtered state matrix
             - mu: constant term in the transition equation
-            - T: coefficients of state in the transition equation 
+            - T: coefficients of state in the transition equation
             - Q: variance of v(t) in the transition equation
-            - s: number of specific variables to extract 
+            - s: number of specific variables to extract
             result:
             - generates drawed_state: sampling state matrix from normal
         '''
@@ -196,27 +196,28 @@ class CarterKohn(object):
         if t < ns:
             state = state.T
             t, ns = state.shape
-        if s is None: 
+        if s is None:
             s = ns
         if MU is None:
-            MU = np.zeros((1,ns))
-            
-        drawed_state = np.zeros((t,ns))
-        wa = randn(t,ns)
-        f = T[:s,:] #sxns
-        q = Q[:s,:s]
-        mu = MU[:,:s]
-        p00 = np.squeeze(state_var[t-1,:s,:s])
-        drawed_state[t-1,:s] = state[t-1,:s] + np.dot(wa[t-1,:s],cholx(p00))
+            MU = np.zeros((1, ns))
 
-        for i in range(t-2,0,-1):
-            
-            pt = squeeze(state_var[i,:,:]) # nsxns
-            temp = np.dot(np.dot(pt,f.T),inv(np.dot(np.dot(f,pt),f.T))+q)
-            mean = state[i,:] + np.dot(temp,(drawed_state[i+1,:s]-
-                                             mu-np.dot(state[i,:],f.T)).T).T
-            variance = pt - np.dot(temp,np.dot(f,pt))
-            drawed_state[i,:s] = mean[:,:s] + np.dot(wa[i,:s],cholx(variance[:s,:s]))
-        
-        self.drawed_state = drawed_state[:,:s]
+        drawed_state = np.zeros((t, ns))
+        wa = randn(t, ns)
+        f = T[:s, :] #sxns
+        q = Q[:s, :s]
+        mu = MU[:, :s]
+        p00 = np.squeeze(state_var[t-1, :s, :s])
+        drawed_state[t-1, :s] = state[t-1, :s] + np.dot(wa[t-1, :s], cholx(p00))
+
+        for i in range(t-2, 0, -1):
+
+            pt = squeeze(state_var[i, :, :]) # nsxns
+            temp = np.dot(np.dot(pt, f.T), inv(np.dot(np.dot(f, pt), f.T))+q)
+            mean = state[i, :] + np.dot(temp, (drawed_state[i+1, :s] - \
+                                               mu - np.dot(state[i, :], f.T)).T).T
+            variance = pt - np.dot(temp, np.dot(f, pt))
+            drawed_state[i, :s] = mean[:, :s] + np.dot(wa[i, :s], cholx(variance[:s, :s]))
+
+        self.drawed_state = drawed_state[:, :s]
         return self
+        

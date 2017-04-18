@@ -113,8 +113,8 @@ class BayesianLinearRegression(BayesianModel, Sampler):
 
             for i in range(self.n_iter):
                 coef, sigma = self.sampling_from_posterior(coef_ols=ols.coef,
-                                                            sigma=sigma,
-                                                            sse_ols=ols.sse)
+                                                           sigma=sigma,
+                                                           sse_ols=ols.sse)
                 self._save(coef, sigma, i)
 
         elif self.prior_option_key is 'NonConjugate':
@@ -122,7 +122,7 @@ class BayesianLinearRegression(BayesianModel, Sampler):
 
             for i in range(self.n_iter):
                 coef, sigma = self.sampling_from_conditional_posterior(coef_ols=ols.coef,
-                                                                        sigma=sigma)
+                                                                       sigma=sigma)
                 self._save(coef, sigma, i)
         return self
 
@@ -135,7 +135,7 @@ class BayesianLinearRegression(BayesianModel, Sampler):
             self.coef = coef[:, 0:1]
             self.sigma = sigma
 
-    def sampling_from_posterior(self, *, coef_ols=None, sigma=None,sse_ols=None):
+    def sampling_from_posterior(self, *, coef_ols=None, sigma=None, sse_ols=None):
         self.get_posterior_distribution(coef_ols=coef_ols,
                                         sigma=sigma,
                                         sse_ols=sse_ols)
@@ -405,7 +405,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                 tiled_Gamma = np.tile(self._Gamma[i:i+1, :], (FX[lag].shape[0], 1))
                 Z_temp = np.empty((FX[lag].shape[0], 0))
                 for j in range(1, lag+1):
-                    Z_temp = np.append(Z_temp, FX[lag-j:, :], axis=1)
+                    Z_temp = np.append(Z_temp, FX[j][lag-j:, :], axis=1)
                     z2 = np.c_[tiled_Gamma, Z_temp]
                 Z_2 = np.r_(Z_2, z2)
 
