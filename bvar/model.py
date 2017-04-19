@@ -358,7 +358,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             self._H = np.empty((m, m*lag))
             self._Psi = np.empty((m, self.n_factor))
             self._r = np.empty((m, 1))
-            self._F = np.empty((m, m*lag))
+            self._F = np.empty((m, m*lag)) #(mxm) x!
 
             for ind in range(m):
                 y_i = Y[:, ind: ind + 1][lag:, :]
@@ -393,35 +393,27 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                 state1 = np.append(state1, FX[i][lag-i:, :], axis=1)
                 state2 = np.append(state2, np.ones((state2.shape[0], 1)), axis=1)
 
-            var_setup = SetupForVAR(lag=var_lag, const=False).prepare(state)
+            var_setup = SetupForVAR(lag=var_lag, const=False).prepare(state1)
             state_var_Y = var_setup.Y
             state_var_X = var_setup.X
             coef, sigma = self.sampling_parameters(state_var_Y, state_var_X,
-                                                   np.eye(state_Y.shape[1]))
+                                                   np.eye(state_var_Y.shape[1]))
 
-            Z_1 = np.c_[self._Gamma, np.ones((m, 1)), np.ones((m, 1))]
             Z_2 = np.empty((0, self._Gamma.shape[1]+lag))
             for i in range(m):
-                tiled_Gamma = np.tile(self._Gamma[i:i+1, :], (FX[lag].shape[0], 1))
+                tiled_Gamma = np.tile(self._Gamma[i:i+1, :], (FX[lag].shape[0], 1)) #tx1
                 Z_temp = np.empty((FX[lag].shape[0], 0))
                 for j in range(1, lag+1):
                     Z_temp = np.append(Z_temp, FX[j][lag-j:, :], axis=1)
                     z2 = np.c_[tiled_Gamma, Z_temp]
-                Z_2 = np.r_(Z_2, z2)
+                Z_2 = np.r_(Z_2, z2) #(mx(n+lag))
 
-            H = np.diag(self._St[:, 0])
-            m_var, k_var = state_var_Y.shape[1], state_var_X.shape[1]
-            reshaped_coef = np.reshape(coef, (m_var, k_var))
-            T = np.r_[reshaped_coef.T,
-                      np.eye(m_var*(var_lag-1), k_var)]
-            Q = np.c_[np.r_[sigma, np.zeros(sigma.shape)],
-                      np.r_[np.zeros(sigma.shape), np.zeros(sigma.shape)]]
-            R = np.eye(k_var)
+            Z, H, T, Q, R = self._get_state_space_model_parameters(state_var_Y, state_var_X,
+                                                                   coef, sigma, lag, var_lag)
             state0, \
             state0_var = self._get_initial_value_of_state(state, var_lag)
-            state = DurbinKoopmanSmoother(state0, state0_var). \
-                                                smoothing(state_var_Y, Z=Z, T=T,
-                                                          R=R, H=H, Q=Q).state_tilda[:, :3]
+            state = DurbinKoopmanSmoother(state0, state0_var).smoothing(state_var_Y, Z=Z, T=T,
+                                                                        R=R, H=H, Q=Q).state_tilda[:, :3]
 
     def sampling_parameters(self, y, x, sigma0):
         y_type = 'multivariate'
@@ -471,6 +463,25 @@ class FactorAugumentedVARX(BayesianLinearRegression):
         state0_var = np.eye(state0.shape[1])
         return state0, state0_var
 
+    def _get_state_space_model_parameters(self, state_Y, state_X, coef, sigma,
+                                          lag, var_lag):
+        m_var, k_var = state_Y.shape[1], state_X.shape[1]
+        Z = self._Gamma
+
+        for i in range(1, lag + 1):
+            Z = np.append(Z, np.ones((self._Gamma[0], 1)))
+        reshaped_coef = np.reshape(coef, (k_var, m_var), order='F')
+        if var_lag == 1:
+            T = reshaped_coef.T
+            Q = sigma
+        else:
+            T = np.r_[reshaped_coef.T,
+                        np.eye(m_var*(var_lag-1), k_var)]
+            Q = np.zeros((k_var, k_var))
+            Q[:m_var, :m_var] = sigma
+        H = np.diag(self._St[:, 0])  # mxm
+        R = np.eye(k_var)
+        return Z, H, T, Q, R
 
     def _gibbs_sampling(self, Y, X, z, sigma_i):
 

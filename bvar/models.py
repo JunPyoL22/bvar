@@ -11,10 +11,12 @@ from bvar.sampling import draw_inverse_gamma
 def argument_checker(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
-        for key, subkey in {'impulse_option': 'ihorizon', 'forecast_option': 'repfor'}.items():
+        for key, subkey in {'impulse_option': 'ihorizon',
+                            'forecast_option': 'repfor'}.items():
             if kwargs.get(key) is True:
                 if kwargs.get(subkey) is None:
-                    raise ValueError('"{0}" must be integer when "{1}" is True'.format(subkey, key))
+                    raise ValueError('"{0}" must be integer '
+                                     'when "{1}" is True'.format(subkey, key))
         return func(*args, **kwargs)
     return wrapper
 
