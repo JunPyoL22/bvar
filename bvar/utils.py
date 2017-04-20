@@ -1,3 +1,4 @@
+import numpy as np
 from numpy import ndarray, full, r_, tile, mean, \
                   std, real, nan, empty, vstack, \
                   atleast_2d, sqrt, dot, argsort, \
@@ -32,7 +33,7 @@ class NoneValueChecker(object):
                     be specified, not None value'.format(name))
         return self.func(*args, **kwargs)
 
-class DimensionYChecker(object):
+class Y_Dimension_Checker(object):
     def __init__(self, func):
         self.func = func
 

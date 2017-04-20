@@ -286,9 +286,9 @@ class NonConjugatePrior(NaturalConjugatePrior):
 
     def _get_wishart_posterior_parameters(self, alpha):
         '''
-        :param alpha: nparray, drawed array from conditional Normal posterior distribution 
+        :param alpha: ndarray, drawed array from conditional Normal posterior distribution 
         :return: 
-         - scale: nparray, scale array of wishart distribution
+         - scale: ndarray, scale array of wishart distribution
          - dof: int, degree of freedom of wishart distribution
         '''
         S0, v0 = self.S0, self.v0
@@ -347,9 +347,12 @@ class FactorAugumentedVARX(BayesianLinearRegression):
         return self
 
     def gibbs_sampling(self, Y, z, factors):
-        m = Y.shape[1]
+        t, m = Y.shape
+        n = self.n_factor
         lag = self.lag
         var_lag = self.var_lag
+        r = np.ones((m, 1)) # variace of
+        sigma = np.eye(n+1)
 
         for i in range(self.n_iter):
             self._A = np.empty((m, 2))
@@ -357,8 +360,9 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             self._G = np.empty((m, m))
             self._H = np.empty((m, m*lag))
             self._Psi = np.empty((m, self.n_factor))
-            self._r = np.empty((m, 1))
-            self._F = np.empty((m, m*lag)) #(mxm) x!
+            self._F = np.empty((m, m*lag)) #(mxm)x!
+            self._e = np.empty((t-lag, m))
+            # self._r = np.empty((m, 1))
 
             for ind in range(m):
                 y_i = Y[:, ind: ind + 1][lag:, :]
@@ -368,17 +372,18 @@ class FactorAugumentedVARX(BayesianLinearRegression):
 
                 x = self._get_factor_loading_regressor(y_i_lag, z_i, z_i_lag, factors)
 
-                sigma0 = np.eye(y_i.shape[1])
-                coef_i, sigma_i = self.sampling_parameters(y_i, x, sigma0)
+                sigma0 = r[ind]
+                coef_i, _, sigma_i = self.sampling_parameters(y_i, x, sigma0)
                 self._hold_drawed_factor_loadings(coef_i, ind, m)
-                self._r[ind:ind+1, :] = sigma_i
+                r[ind:ind+1, :] = sigma_i
+                self._e[:, ind:ind+1] = y_i - np.dot(x, coef_i)
 
             invG = inv(self._G)
             for i in range(1, lag+1):
                 self._F[:, (i-1)*m:i*m] = np.dot(invG, self._H[:, (i-1)*m:i*m]) #mxm
 
             self._Gamma = np.dot(invG, self._Psi) #mxn_factor
-            self._St = np.dot(invG, self._r) #mx1
+            self._St = np.dot(invG, self._e.T).T #mx1
 
             FX = dict()
             for i in range(1, lag+1):
@@ -396,8 +401,10 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             var_setup = SetupForVAR(lag=var_lag, const=False).prepare(state1)
             state_var_Y = var_setup.Y
             state_var_X = var_setup.X
-            coef, sigma = self.sampling_parameters(state_var_Y, state_var_X,
-                                                   np.eye(state_var_Y.shape[1]))
+            coef, reshaped_coef, sigma = self.sampling_parameters(state_var_Y,
+                                                                  state_var_X,
+                                                                  sigma)
+            self._u = state_var_Y[:,n] - np.dot(state_var_X, reshaped_coef)
 
             Z_2 = np.empty((0, self._Gamma.shape[1]+lag))
             for i in range(m):
@@ -408,14 +415,15 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                     z2 = np.c_[tiled_Gamma, Z_temp]
                 Z_2 = np.r_(Z_2, z2) #(mx(n+lag))
 
-            Z, H, T, Q, R = self._get_state_space_model_parameters(state_var_Y, state_var_X,
-                                                                   coef, sigma, lag, var_lag)
+            Z, H, T, Q, R = self._get_state_space_model_parameters(coef, reshaped_coef,
+                                                                   sigma, lag, var_lag)
             state0, \
             state0_var = self._get_initial_value_of_state(state, var_lag)
             state = DurbinKoopmanSmoother(state0, state0_var).smoothing(state_var_Y, Z=Z, T=T,
                                                                         R=R, H=H, Q=Q).state_tilda[:, :3]
 
     def sampling_parameters(self, y, x, sigma0):
+        m, k = y.shape[1], x.shape[1]
         y_type = 'multivariate'
         if y.shape[1] == 1:
             y_type = 'univairate'
@@ -425,7 +433,8 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             self._sampling_from_conditional_posterior(coef_ols=ols.coef,
                                                       sigma=sigma_i,
                                                       y_type=y_type)
-        return coef, sigma
+        reshaped_coef = np.reshape(coef, (k, m), order='F')
+        return coef, reshaped_coef, sigma
 
     def _get_W(self, w, m):
         W = np.empty((2*m, m))
@@ -453,7 +462,6 @@ class FactorAugumentedVARX(BayesianLinearRegression):
     def _get_initial_value_of_state(state, lag):
         if lag >= 2:
             temp0 = np.empty((1, 0))
-
             for i in range(lag-1, 0, -1):
                 temp0 = np.append(temp0, state[i-1:i, :], axis=1)
             state0 = np.c_[temp0, np.zeros((1, state.shape[1]))]
@@ -463,14 +471,17 @@ class FactorAugumentedVARX(BayesianLinearRegression):
         state0_var = np.eye(state0.shape[1])
         return state0, state0_var
 
-    def _get_state_space_model_parameters(self, state_Y, state_X, coef, sigma,
+    def _get_state_space_model_parameters(self, coef, reshaped_coef, sigma,
                                           lag, var_lag):
-        m_var, k_var = state_Y.shape[1], state_X.shape[1]
-        Z = self._Gamma
-
+        m_var, k_var = reshaped_coef.shape
+        m, n = self._Gamma.shape
+        Z = self._Gamma #mxn
         for i in range(1, lag + 1):
-            Z = np.append(Z, np.ones((self._Gamma[0], 1)))
-        reshaped_coef = np.reshape(coef, (k_var, m_var), order='F')
+            Z = np.append(Z, np.ones((m, 1)), axis=1)
+        # for indentifying factors
+        Z[:n, :n] = np.eye(n)
+        Z[:n, n:n+1] = np.ones((n, 1))
+
         if var_lag == 1:
             T = reshaped_coef.T
             Q = sigma

@@ -1,9 +1,9 @@
 import numpy as np
 from numpy.random import randn
 from numpy.linalg import cholesky, inv
-from base import Smoother
+from bvar.base import Smoother
 from filter import KalmanFilter
-from utils import NoneValueChecker, DimensionYChecker
+from bvar.utils import Y_Dimension_Checker, cholx
 
 class DisturbanceSmoother(Smoother):
     def smoothing(self, y, *, Z=None, alpha0=None, P0=None, T=None, R=None,
@@ -11,19 +11,19 @@ class DisturbanceSmoother(Smoother):
         '''
         (1) Observation Eq: y(t) = Z(t)*state(t) + e(t), e(t) ~ N(0,H(t))
         (2) Transition Eq: state(t) = T(t)*state(t) + R(t)n(t), n(t) ~ N(0,Q(t))
-        :param y: nparray, mxt, dependent variable in Observation equation (1)
-        :param Z: nparray, Z(t) in (1) Eq for t = 1..t_max
-        :param alpha0: nparray, initial value of state
-        :param PO: nparray, initial variance of state
-        :param T: nparray, T(t) in (2) Eq for t = 1..t_max
-        :param R: nparray, R(t) in (2) Eq for t = 1..t_max
-        :param H: nparray, nvariance of e(t) in (1) Eq for t = 1..t_max
-        :param Q: nparray, variance of n(t) in (2) Eq for t = 1..t_max
-        :param a: nparray, filtered state by Kalmanfilter
-        :param K: nparray, Kalmangain
-        :param F: nparray,
-        :param L: nparray,
-        :param V: nparray,
+        :param y: ndarray, mxt, dependent variable in Observation equation (1)
+        :param Z: ndarray, Z(t) in (1) Eq for t = 1..t_max
+        :param alpha0: ndarray, initial value of state
+        :param PO: ndarray, initial variance of state
+        :param T: ndarray, T(t) in (2) Eq for t = 1..t_max
+        :param R: ndarray, R(t) in (2) Eq for t = 1..t_max
+        :param H: ndarray, nvariance of e(t) in (1) Eq for t = 1..t_max
+        :param Q: ndarray, variance of n(t) in (2) Eq for t = 1..t_max
+        :param a: ndarray, filtered state by Kalmanfilter
+        :param K: ndarray, Kalmangain
+        :param F: ndarray,
+        :param L: ndarray,
+        :param V: ndarray,
         '''
         self.m, self.t = y.shape
         self.k, _ = alpha0.shape
@@ -38,12 +38,8 @@ class DisturbanceSmoother(Smoother):
         Rt = R
         for i in range(t-1, -1, -1):
 
-            if m == 1:
-                Ht, Zt = H, Z
-            else:
-                Ht = H[i*m:(i+1)*m, :]
-                Zt = Z[i*m:(i+1)*m, :]
-
+            Ht = H[i*m:(i+1)*m, :]
+            Zt = Z[i*m:(i+1)*m, :]
             w_hat[i, : m, :] = np.dot(np.dot(Ht, inv(F[i])), v[i]) - np.dot(np.dot(Ht, K[i].T), r[i+1]) #e_hat:mx1
             w_hat[i, m:m+k, :] = np.dot(np.dot(Q, Rt.T), r[i+1]) # n_hat: kx1
             r[i] = np.dot(np.dot(Zt.T, inv(F[i])), v[i]) + np.dot(L[i].T, r[i+1])
@@ -71,18 +67,19 @@ class DurbinKoopmanSmoother(Smoother):
        State Space Recursion Equations
        (1) Observation Eq: y(t) = Z(t)*state(t) + e(t) e(t) ~ N(0,H(t))
        (2) Transition Eq: state(t) = T(t)*state(t) + R(t)n(t) n(t) ~ N(0,Q(t))
-        - wplus: nparray, drawed random vector w+(w=(e',n')') from density p(w)~N(0,diag{H1,...,Hn,Q1,...,Qn})
+        - wplus: ndarray, drawed random vector w+(w=(e',n')') from density p(w)~N(0,diag{H1,...,Hn,Q1,...,Qn})
         - m: int, the number of dimension of y
         - k: int, the number of dimension(elements) in alpha(=state)
         - t: int, the number of observation time
-        - Z: nparray, Z(t) in (1) Eq for t = 1..t_max
-        - T: nparray, T(t) in (2) Eq for t = 1..t_max
-        - R: nparray, R(t) in (2) Eq for t = 1..t_max
+        - Z: ndarray, Z(t) in (1) Eq for t = 1..t_max
+        - T: ndarray, T(t) in (2) Eq for t = 1..t_max
+        - R: ndarray, R(t) in (2) Eq for t = 1..t_max
     """
-    def __init__(self, state0=None, state0_var=None):
+    def __init__(self, state0=None, state0_var=None, is_tvp='False'):
         self.state0 = state0
         self.state0_var = state0_var
-        self._kalmanfilter = KalmanFilter(state0=state0, state0_var=state0_var)
+        self._is_tvp = is_tvp
+        self._kalmanfilter = KalmanFilter(state0=state0, state0_var=state0_var, is_tvp=is_tvp)
         self._smoother = DisturbanceSmoother()
 
     def draw_wplus(self, H, Q, s):
@@ -94,10 +91,8 @@ class DurbinKoopmanSmoother(Smoother):
         mean = 0
 
         for i in range(t):
-
-            if m == 1: Ht = H
-                # Ht, Qt = H, Q
-            else: Ht = H[i*m:(i+1)*m, :], 
+            if self._is_tvp: Ht = H[i*m:(i+1)*m, :]
+            else: Ht = H
             Qt = Q[:s,:s][i*k:(i+1)*k, :]
             wplus[i*(m+k):i*(m+k)+m, :] = mean + \
                                           np.dot(cholesky(Ht).T,randn(m,1))
@@ -107,13 +102,13 @@ class DurbinKoopmanSmoother(Smoother):
 
     def state_space_recursion(self, wplus, Z, T=None, R=None):
         '''
-        -wplus: nparray, drawed random vector w+(w=(e',n')') from density p(w)~N(0,diag{H1,...,Hn,Q1,...,Qn})
+        -wplus: ndarray, drawed random vector w+(w=(e',n')') from density p(w)~N(0,diag{H1,...,Hn,Q1,...,Qn})
         -m: int, the number of dimension of y
         -k: int, the number of dimension(elements) in alpha(=state)
         -t: int, the number of observation time
-        -Z: nparray, Z(t) in (1) Eq for t = 1..t_max
-        -T: nparray, T(t) in (2) Eq for t = 1..t_max
-        -R: nparray, R(t) in (2) Eq for t = 1..t_max
+        -Z: ndarray, Z(t) in (1) Eq for t = 1..t_max
+        -T: ndarray, T(t) in (2) Eq for t = 1..t_max
+        -R: ndarray, R(t) in (2) Eq for t = 1..t_max
         '''
         m, k, t = self.m, self.k, self.t
         if T is None:
@@ -129,7 +124,8 @@ class DurbinKoopmanSmoother(Smoother):
 
             et = wplus[i * mk:i * mk + m, :]
             nt = wplus[i * mk + m:i * mk + mk, :]
-            Zt = Z[i * m:(i + 1) * m, :]  # mxk
+            if self._is_tvp: Zt = Z[i * m:(i + 1) * m, :]  # mxk
+            else: Zt = Z
             y_plus[:, i] = (np.dot(Zt, state[:, i]) + et).T  # mx1.T = 1xm
             state[:, i + 1] = (np.dot(Tt, state[:, i]) + np.dot(Rt, nt)).T  # kx1.T = 1xk
 
@@ -137,7 +133,6 @@ class DurbinKoopmanSmoother(Smoother):
         return self
 
     def simulation_smoothing(self, y, *, Z=None, H=None, Q=None, T=None, R=None, s=None):
-
         self._kalmanfilter.filtering(y, Z=Z, H=H, Q=Q, T=T, R=R)
         filtered_state = self._kalmanfilter.state
         K, F, L, v = self._kalmanfilter.K, self._kalmanfilter.F, \
@@ -146,17 +141,15 @@ class DurbinKoopmanSmoother(Smoother):
                                 R=R, H=H, Q=Q, a=filtered_state, K=K, F=F, L=L, v=v)
         return self._smoother.w_hat, self._smoother.alpha_hat
 
-    @DimensionYChecker
+    @Y_Dimension_Checker
     def smoothing(self, y, *, Z=None, T=None, R=None, H=None, Q=None, s=None):
-
         self.m, self.t = y.shape
-        
-        _, self.k = self.Z
+        _, self.k = self.Z.shape
 
         if self.state0 is None:
             self.state0 = np.zeros((self.k, 1))
         if self.state0_var is None:
-            self.state0_var = np.zeros((self.k,self.k))
+            self.state0_var = np.zeros((self.k, self.k))
 
         self.w_hat, self.state_hat = \
             self.simulation_smoothing(y, Z=Z, H=H, Q=Q, T=T, R=R, s=s)
@@ -211,7 +204,7 @@ class CarterKohn(object):
 
         for i in range(t-2, 0, -1):
 
-            pt = squeeze(state_var[i, :, :]) # nsxns
+            pt = np.squeeze(state_var[i, :, :]) # nsxns
             temp = np.dot(np.dot(pt, f.T), inv(np.dot(np.dot(f, pt), f.T))+q)
             mean = state[i, :] + np.dot(temp, (drawed_state[i+1, :s] - \
                                                mu - np.dot(state[i, :], f.T)).T).T
@@ -220,4 +213,3 @@ class CarterKohn(object):
 
         self.drawed_state = drawed_state[:, :s]
         return self
-        

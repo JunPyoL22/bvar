@@ -2,7 +2,7 @@ import numpy as np
 from numpy.linalg import inv, det
 from scipy.sparse import spdiags
 from bvar.base import Filter
-from bvar.util import NoneValueChecker, DimensionYChecker
+from bvar.utils import Y_Dimension_Checker
 
 class HpFilter(Filter):
 
@@ -78,15 +78,16 @@ class KalmanFilter(Filter):
          - Ft:
          - vt:
     '''
-    def __init__(self, *, state0=None, state0_var=None):
+    def __init__(self, *, state0=None, state0_var=None, is_tvp='False'):
         '''
         state0: nparray, initial mean, value or vector(1xk) of state when t=1
         state0_var: nparray, initial variance of state, value or matrix(kxk) of state when t=1
         '''
         self.state0 = state0
         self.state0_var = state0_var
+        self._is_tvp = is_tvp
 
-    @DimensionYChecker
+    @Y_Dimension_Checker
     def filtering(self, y, *, Z=None, H=None, Q=None, T=None, R=None):
         '''
         (1) Observation Eq: y(t) = Z(t)*state(t) + e(t), e(t) ~ N(0,H(t))
@@ -123,8 +124,8 @@ class KalmanFilter(Filter):
         if self.state0 is None:
             state = np.zeros((t + 1, k, 1))
         else:
-            state = np.zeros((t+1,k,1))
-            state[0] = self.state
+            state = np.zeros((t + 1, k, 1))
+            state[0] = self.state0
 
         if self.state0_var is None:
             state_var = np.zeros((k, k))
@@ -142,15 +143,14 @@ class KalmanFilter(Filter):
         alpha_t, Pt, Kt, Ft, Lt, vt = self._get_container()
 
         for i in range(t):
-
             yt = y[:, i:i+1]  # mx1
             Tt, Rt = T, R
-            if m == 1:
-                Zt = Z
-                Ht = H
-            else:
+            if self._is_tvp:
                 Zt = Z[i * m:(i + 1) * m, :]
                 Ht = H[i*m:(i + 1)*m, :]  # mxm
+            else:
+                Zt = Z
+                Ht = H
             # Ht = H[i*m:(i + 1)*m, :]  # mxm
             # Zt = Z[i*m:(i + 1)*m, :]  # mxk
             # Tt = T[i*k:(i + 1)*k, i*k:(i + 1)*k]  # kxk
