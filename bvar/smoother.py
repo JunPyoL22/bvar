@@ -91,8 +91,11 @@ class DurbinKoopmanSmoother(Smoother):
         mean = 0
 
         for i in range(t):
-            if self._is_tvp: Ht = H[i*m:(i+1)*m, :]
-            else: Ht = H
+            # if self._is_tvp: Ht = H[i*m:(i+1)*m, :]
+            # else: Ht = H
+            if self.is_same_ndarray_recursively_stacked(H, m):
+                Ht = H[:m, :] 
+
             Qt = Q[:s,:s][i*k:(i+1)*k, :]
             wplus[i*(m+k):i*(m+k)+m, :] = mean + \
                                           np.dot(cholesky(Ht).T,randn(m,1))
@@ -126,6 +129,8 @@ class DurbinKoopmanSmoother(Smoother):
             nt = wplus[i * mk + m:i * mk + mk, :]
             if self._is_tvp: Zt = Z[i * m:(i + 1) * m, :]  # mxk
             else: Zt = Z
+            if self.is_same_ndarray_recursively_stacked(Z, m):
+                Zt = Z[:m, :]
             y_plus[:, i] = (np.dot(Zt, state[:, i]) + et).T  # mx1.T = 1xm
             state[:, i + 1] = (np.dot(Tt, state[:, i]) + np.dot(Rt, nt)).T  # kx1.T = 1xk
 
@@ -213,3 +218,9 @@ class CarterKohn(object):
 
         self.drawed_state = drawed_state[:, :s]
         return self
+
+def is_same_ndarray_recursively_stacked(array, m):
+    arr1 = array[0*m:1*m, :]
+    arr2 = array[1*m:2*m, :]
+    comparizon = (arr1 == arr2)
+    return np.sum(comparizon) == m*array.shape[1]

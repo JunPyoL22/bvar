@@ -151,6 +151,9 @@ class KalmanFilter(Filter):
             else:
                 Zt = Z
                 Ht = H
+            if self.is_same_ndarray_recursively_stacked(Z, m):
+                Zt = Z[:m, :]
+                Ht = H[:m, :]
             # Ht = H[i*m:(i + 1)*m, :]  # mxm
             # Zt = Z[i*m:(i + 1)*m, :]  # mxk
             # Tt = T[i*k:(i + 1)*k, i*k:(i + 1)*k]  # kxk
@@ -171,3 +174,9 @@ class KalmanFilter(Filter):
         self.state = alpha_t
         self.state_var = Pt
         return self
+
+def is_same_ndarray_recursively_stacked(array, m):
+    arr1 = array[0*m:1*m, :]
+    arr2 = array[1*m:2*m, :]
+    comparizon = (arr1 == arr2)
+    return np.sum(comparizon) == m*array.shape[1]
