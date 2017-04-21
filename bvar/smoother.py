@@ -93,14 +93,14 @@ class DurbinKoopmanSmoother(Smoother):
         for i in range(t):
             # if self._is_tvp: Ht = H[i*m:(i+1)*m, :]
             # else: Ht = H
-            if self.is_same_ndarray_recursively_stacked(H, m):
-                Ht = H[:m, :] 
+            if self.is_recursively_stacked_array(H, m):
+                Ht = H[i*m:(i+1)*m, :]
 
             Qt = Q[:s,:s][i*k:(i+1)*k, :]
             wplus[i*(m+k):i*(m+k)+m, :] = mean + \
-                                          np.dot(cholesky(Ht).T,randn(m,1))
+                                          np.dot(cholesky(Ht).T,randn(m, 1))
             wplus[i*(m+k)+m:i*(m+k)+(m+k), :] = mean + \
-                                                np.dot(cholesky(Qt).T, randn(k,1))
+                                                np.dot(cholesky(Qt).T, randn(k, 1))
         return wplus
 
     def state_space_recursion(self, wplus, Z, T=None, R=None):
@@ -125,12 +125,12 @@ class DurbinKoopmanSmoother(Smoother):
 
         for i in range(t):
 
-            et = wplus[i * mk:i * mk + m, :]
-            nt = wplus[i * mk + m:i * mk + mk, :]
-            if self._is_tvp: Zt = Z[i * m:(i + 1) * m, :]  # mxk
+            et = wplus[i * mk:i*mk+m, :]
+            nt = wplus[i * mk+m:i*mk+mk, :]
+            if self._is_tvp: Zt = Z[i*m:(i + 1)*m, :]  # mxk
             else: Zt = Z
-            if self.is_same_ndarray_recursively_stacked(Z, m):
-                Zt = Z[:m, :]
+            if self.is_recursively_stacked_array(Z, m):
+                Zt = Z[i*m:(i+1)*m, :]
             y_plus[:, i] = (np.dot(Zt, state[:, i]) + et).T  # mx1.T = 1xm
             state[:, i + 1] = (np.dot(Tt, state[:, i]) + np.dot(Rt, nt)).T  # kx1.T = 1xk
 
@@ -178,7 +178,7 @@ class CarterKohn(object):
             Observation Eq: Y(t) = Z*state(t) + A*z(t) + e(t), var(e(t)) = H
             Transition Eq:  state(t) = MU + T*state(t-1) + R(t)n(t), var(n(t)) = Q
             - state: the kalman filtered state matrix
-            - states_var: variance of the kalman filtered state matrix
+            - states_var: variance of the kalman-filtered state matrix
             - mu: constant term in the transition equation
             - T: coefficients of state in the transition equation
             - Q: variance of v(t) in the transition equation
@@ -219,7 +219,10 @@ class CarterKohn(object):
         self.drawed_state = drawed_state[:, :s]
         return self
 
-def is_same_ndarray_recursively_stacked(array, m):
+def is_recursively_stacked_array(array, m, t):
+    n_obs, n_dim = array.shape
+    if n_obs == m*t:
+
     arr1 = array[0*m:1*m, :]
     arr2 = array[1*m:2*m, :]
     comparizon = (arr1 == arr2)
