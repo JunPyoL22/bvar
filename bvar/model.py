@@ -1,10 +1,9 @@
-
 import numpy as np
 from numpy.linalg import inv
-from .base import BaseLinearRegression, BayesianModel, BasePrior, SetupForVAR
-from .sampling import Sampler
-from .utils import standardize, cholx, vec, DotDict
-from .smoother import DurbinKoopmanSmoother
+from base import BaseLinearRegression, BayesianModel, BasePrior, SetupForVAR
+from sampling import Sampler
+from utils import standardize, cholx, vec, DotDict
+from smoother import DurbinKoopmanSmoother
 
 class BayesianLinearRegression(BayesianModel, Sampler):
 
@@ -27,7 +26,7 @@ class BayesianLinearRegression(BayesianModel, Sampler):
                                    {"NonConjugate": "Indep_NormalGamma-Informative"},
                                    {"NonConjugate": "Indep_NormalGamma-NonInformative"},
         :param alpha0: mean of Prior Normaldistribution
-        :param V0: variance of Prior  Normaldistribution
+        :param V0: variance of Prior Normaldistribution
         :param V0_scale: scale of variance of Prior Normaldistribution
         :param v0: degree of freedom of Prior  WishartDistribution
         :param S0: scale matrix of freedom of Prior  WishartDistribution
@@ -313,20 +312,13 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                          prior_option={'NonConjugate':'Indep_NormalWishart-NonInformative'},
                          alpha0=alpha0, V0=V0, V0_scale=V0_scale, S0=S0)
         self.smoother_option = smoother_option
-        self.tvp_option = tvp_option
         self.n_factor = n_factor
         self.var_lag = var_lag
         self.is_standardize = is_standardize
 
     def get_principle_component(self, Y):
-        from bvar.utils import get_principle_component
+        from utils import get_principle_component
         return get_principle_component(Y, self.n_factor)
-
-        # bayes_fl = BayesianLinearRegression(n_iter=1, n_save=1, lag=lag, y_type='univariate',
-        #                                       prior_option={'NonConjugate': 'Indep_NormalWishart-NonInformative'},
-        #                                       alpha0=np.zeros((x.shape[1], 1)),
-        #                                       V0=np.eye(x.shape[1]), V0_scale=1,
-        #                                       v0=0, S0=0).set_prior(y, x)
 
     def estimate(self, Y, X, z, w):
         '''Assume Y, X has right form for VAR model to estimate
@@ -361,8 +353,8 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             self._Psi = np.empty((m, self.n_factor))
             self._F = np.empty((m, m*lag)) #(mxm)x!
             self._e = np.empty((t-lag, m))
-            # self._r = np.empty((m, 1))
-
+            
+            BayesianLinearRegression(n_iter=1,n_save=1,lag=lag)
             for ind in range(m):
                 y_i = Y[:, ind: ind + 1][lag:, :]
                 z_i = z[:, ind: ind + 1][lag:, :]
@@ -405,14 +397,14 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                                                                   sigma)
             self._u = state_var_Y[:,n] - np.dot(state_var_X, reshaped_coef)
 
-            Z_2 = np.empty((0, self._Gamma.shape[1]+lag))
-            for i in range(m):
-                tiled_Gamma = np.tile(self._Gamma[i:i+1, :], (FX[lag].shape[0], 1)) #tx1
-                Z_temp = np.empty((FX[lag].shape[0], 0))
-                for j in range(1, lag+1):
-                    Z_temp = np.append(Z_temp, FX[j][lag-j:, :], axis=1)
-                    z2 = np.c_[tiled_Gamma, Z_temp]
-                Z_2 = np.r_(Z_2, z2) #(mx(n+lag))
+            # Z_2 = np.empty((0, self._Gamma.shape[1]+lag))
+            # for i in range(m):
+            #     tiled_Gamma = np.tile(self._Gamma[i:i+1, :], (FX[lag].shape[0], 1)) #tx1
+            #     Z_temp = np.empty((FX[lag].shape[0], 0))
+            #     for j in range(1, lag+1):
+            #         Z_temp = np.append(Z_temp, FX[j][lag-j:, :], axis=1)
+            #         z2 = np.c_[tiled_Gamma, Z_temp]
+            #     Z_2 = np.r_(Z_2, z2) #(mx(n+lag))
 
             Z, H, T, Q, R = self._get_state_space_model_parameters(coef, reshaped_coef,
                                                                    sigma, lag, var_lag, var_setup.t)

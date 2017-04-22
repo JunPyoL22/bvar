@@ -1,8 +1,8 @@
 import numpy as np
 from numpy.linalg import inv, det
 from scipy.sparse import spdiags
-from .base import Filter
-from .utils import Y_Dimension_Checker
+from base import Filter
+from utils import Y_Dimension_Checker
 
 class HpFilter(Filter):
 
