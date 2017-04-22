@@ -1,10 +1,10 @@
 
 import numpy as np
 from numpy.linalg import inv
-from bvar.base import BaseLinearRegression, BayesianModel, BasePrior, SetupForVAR
-from bvar.sampling import Sampler
-from bvar.utils import standardize, cholx, vec, DotDict
-from bvar.smoother import DurbinKoopmanSmoother
+from .base import BaseLinearRegression, BayesianModel, BasePrior, SetupForVAR
+from .sampling import Sampler
+from .utils import standardize, cholx, vec, DotDict
+from .smoother import DurbinKoopmanSmoother
 
 class BayesianLinearRegression(BayesianModel, Sampler):
 
@@ -77,16 +77,16 @@ class BayesianLinearRegression(BayesianModel, Sampler):
         if self.prior_option_key is 'Conjugate':
             self.prior_type = list(self.prior_option.values())[0].split('-')[1]
             self.prior = NaturalConjugatePrior(Y, X, alpha0,
-                                                scale*V0, v0, S0,
-                                                type=self.prior_type)
+                                               scale*V0, v0, S0,
+                                               prior_type=self.prior_type)
             return self
 
         # NonConjugate
         else:
             self.prior_type = list(self.prior_option.values())[0].split('-')[1]
             self.prior = NonConjugatePrior(Y, X, alpha0,
-                                                scale*V0, v0, S0,
-                                                type=self.prior_type)
+                                           scale*V0, v0, S0,
+                                           prior_type=self.prior_type)
             return self
 
     def get_posterior_distribution(self, *, coef_ols=None, sigma=None, sse_ols=None):
@@ -307,8 +307,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
 
     def __init__(self, n_iter=100, n_save=50, lag=1, var_lag=1, n_factor=3,
                  alpha0=None, V0=None, V0_scale=1, v0=None, S0=None,
-                 smoother_option='DurbinKoopman',tvp_option=False,
-                 is_standardize=True):
+                 smoother_option='DurbinKoopman', is_standardize=True):
 
         super().__init__(n_iter=n_iter, n_save=n_save, lag=lag, y_type="univariate",
                          prior_option={'NonConjugate':'Indep_NormalWishart-NonInformative'},
@@ -416,7 +415,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                 Z_2 = np.r_(Z_2, z2) #(mx(n+lag))
 
             Z, H, T, Q, R = self._get_state_space_model_parameters(coef, reshaped_coef,
-                                                                   sigma, lag, var_lag)
+                                                                   sigma, lag, var_lag, var_setup.t)
             state0, \
             state0_var = self._get_initial_value_of_state(state, var_lag)
             state = DurbinKoopmanSmoother(state0, state0_var).smoothing(state_var_Y, Z=Z, T=T,
@@ -472,7 +471,13 @@ class FactorAugumentedVARX(BayesianLinearRegression):
         return state0, state0_var
 
     def _get_state_space_model_parameters(self, coef, reshaped_coef, sigma,
-                                          lag, var_lag):
+                                          lag, var_lag, t):
+        '''
+        This function returns parameters on 
+        state space model with Non-timevaring parameters and Non-stochastic volatilty
+        i.e Z, T, H, Q are constant all the time or not varying depends on time
+        '''
+
         m_var, k_var = reshaped_coef.shape
         m, n = self._Gamma.shape
         Z = self._Gamma #mxn
@@ -487,85 +492,14 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             Q = sigma
         else:
             T = np.r_[reshaped_coef.T,
-                        np.eye(m_var*(var_lag-1), k_var)]
+                      np.eye(m_var*(var_lag-1), k_var)]
             Q = np.zeros((k_var, k_var))
             Q[:m_var, :m_var] = sigma
         H = np.diag(self._St[:, 0])  # mxm
         R = np.eye(k_var)
-        return Z, H, T, Q, R
-
-    def _gibbs_sampling(self, Y, X, z, sigma_i):
-
-        lag = self.lag
-        var_lag = self.var_lag
-
-        for ind in range(Y.shape[1]):
-
-            y_i = Y[:, ind: ind + 1][lag:, :]
-            z_i = z[:, ind: ind + 1][lag:, :]
-            y_i_lag = SetupForVAR(lag=lag, const=False).prepare(y_i).X
-            z_i_lag = SetupForVAR(lag=lag, const=False).prepare(z_i).X
-
-            self._set_state(factors, y_i_lag, z_i, z_i_lag)
-
-            # set state0 and state0_var by VAR model lag(var_lag)
-            if var_lag >= 2:
-                temp0 = np.empty((1, 0))
-
-                for i in range(var_lag - 1, 0, -1):
-                    temp0 = np.append(temp0, self.state[i - 1:i, :])
-                state0 = np.c_[temp0, np.zeros((1, self.state.shape[1]))]
-
-            elif var_lag == 1:
-                state0 = np.zeros((1, self.state.shape[1]))
-            state0_var = np.eye(state0.shape[1])
-
-            dk_smoother = DurbinKoopmanSmoother(state0, state0_var)
-
-            self.set_prior(y_i, self.state)
-            sigma_i = np.eye(y_i.shape[1])
-            ols = self.fit(y_i, self.state, method='ls')
-
-            # Data setup for the VAR transition equation of State Space Model
-            setup_VAR = SetupForVAR(lag=var_lag, const=False).prepare()
-
-            for i in range(self.n_iter):
-
-                # sampling factor loads
-                coef_i, sigma_i = \
-                    self._sampling_from_conditional_posterior(coef_ols=ols.coef,
-                                                              sigma=sigma_i,
-                                                              y_type='univariate')
-
-                # Set prior for VAR(state transition equation) sampling
-                state_Y = setup_VAR.prepare(self.state).Y
-                state_X = setup_VAR.prepare(self.state).X
-
-                self.set_prior(state_Y, state_X)
-                ols_var = self.fit(state_Y, state_X, method='ls')
-                if i == 0: state_VAR_sigma = np.eye(state_Y.shape[1])
-
-                state_VAR_coef, state_VAR_sigma = \
-                    self._sampling_from_conditional_posterior(coef_ols=ols_var.coef,
-                                                              sigma=state_VAR_sigma,
-                                                              y_type='univariate')
-                # set terms for state space model
-                Z = np.c_[coef_i.T, np.zeros((1, self.state.shape[1]))]
-                H = sigma_i
-                m_var, k_var = state_Y.shape[1], state_X.shape[1]
-                reshaped_state_VAR_coef = np.reshape(state_VAR_coef, (k_var, m_var))
-                T = np.r_[reshaped_state_VAR_coef.T,
-                          np.eye(m_var*(var_lag-1), k_var)]
-                Q = np.c_[np.r_[state_VAR_sigma, np.zeros(state_VAR_sigma.shape)],
-                          np.r_[np.zeros(state_VAR_sigma.shape), np.zeros(state_VAR_sigma.shape)]]
-                R = np.eye(k_var)
-                state = dk_smoother.smoothing(state_Y, Z=Z, T=T, R=R, H=H, Q=Q).state_tilda[:, :3]
-
-                #update factors
-
-                #reset state using updated factors
-                self._set_state(y_i_lag, z_i, z_i_lag)
-                pass
+        return np.tile(Z, (t, 1)), np.tile(H, (t, 1)),\
+               np.tile(T, (t, 1)), np.tile(Q, (t, 1)),\
+               np.tile(R, (t, 1))
 
     def _get_factor_loading_regressor(self, factors, y_i_lag, z_i, z_i_lag):
         if self.lag == 0:

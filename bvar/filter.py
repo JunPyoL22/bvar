@@ -1,8 +1,8 @@
 import numpy as np
 from numpy.linalg import inv, det
 from scipy.sparse import spdiags
-from bvar.base import Filter
-from bvar.utils import Y_Dimension_Checker
+from .base import Filter
+from .utils import Y_Dimension_Checker
 
 class HpFilter(Filter):
 
@@ -63,48 +63,50 @@ class KalmanFilter(Filter):
         State Space Recursion Equations
         (1) Observation Eq: y(t) = Z(t)*state(t) + e(t), e(t) ~ N(0,H(t))
         (2) Transition Eq: state(t) = T(t)*state(t) + R(t)n(t), n(t) ~ N(0,Q(t))
-        :param y: mxt, dependent variable in Observation equation (1)
-        :param Z: Z(t) in (1) Eq for t = 1..t_max
-        :param H: variance of e(t) in (1) Eq for t = 1..t_max
-        :param Q: variance of n(t) in (2) Eq for t = 1..t_max
-        :param T: T(t) in (2) Eq for t = 1..t_max
-        :param R: R(t) in (2) Eq for t = 1..t_max
+        (1) Observation Eq: y(t) = Z(t)*state(t) + e(t), e(t) ~ N(0,H(t))
+        (2) Transition Eq: state(t) = T(t)*state(t) + R(t)n(t), n(t) ~ N(0,Q(t))
+         m, k, t mean the dimension of y, state and the number of timeseries observation
+        :param y: mxt or txm ndarray
+        :param Z: (m*t)xk ndarray, Z(t) in (1) Eq for t = 1..t_max
+        :param H: (m*t)xm ndarray, variance of e(t) in (1) Eq for t = 1..t_max
+        :param Q: (k*t)xk ndarray, variance of n(t) in (2) Eq for t = 1..t_max
+        :param T: (k*t)xk ndarray, T(t) in (2) Eq for t = 1..t_max
+        :param R: (k*t)xk ndarray, R(t) in (2) Eq for t = 1..t_max
         Attributes
-         - state: estimated state using Kalmanfilter
-         - state_var: estimated variance of state using Kalmanfilter
+         - state: filteted state by Kalmanfilter
+         - state_var: filteted variance of state by Kalmanfilter
          - loglik: loglikely value
-         - Kt:
-         - Lt:
-         - Ft:
-         - vt:
+         - Kt: Kalman Gain
+         - Lt: 
+         - Ft: variance of vt
+         - vt: innovation
     '''
-    def __init__(self, *, state0=None, state0_var=None, is_tvp='False'):
+    def __init__(self, *, state0=None, state0_var=None):
         '''
         state0: nparray, initial mean, value or vector(1xk) of state when t=1
         state0_var: nparray, initial variance of state, value or matrix(kxk) of state when t=1
         '''
         self.state0 = state0
         self.state0_var = state0_var
-        self._is_tvp = is_tvp
 
     @Y_Dimension_Checker
     def filtering(self, y, *, Z=None, H=None, Q=None, T=None, R=None):
         '''
         (1) Observation Eq: y(t) = Z(t)*state(t) + e(t), e(t) ~ N(0,H(t))
         (2) Transition Eq: state(t) = T(t)*state(t) + R(t)n(t), n(t) ~ N(0,Q(t))
-        :param y: mxt, dependent variable in Observation equation (1)
-        :param Z: Z(t) in (1) Eq for t = 1..t_max
-        :param H: variance of e(t) in (1) Eq for t = 1..t_max
-        :param Q: variance of n(t) in (2) Eq for t = 1..t_max
-        :param T: T(t) in (2) Eq for t = 1..t_max
-        :param R: R(t) in (2) Eq for t = 1..t_max
+         m, k, t mean the dimension of y, state and the number of timeseries observation
+        :param y: mxt or txm ndarray
+        :param Z: (m*t)xk ndarray, Z(t) in (1) Eq for t = 1..t_max
+        :param H: (m*t)xm ndarray, variance of e(t) in (1) Eq for t = 1..t_max
+        :param Q: (k*t)xk ndarray, variance of n(t) in (2) Eq for t = 1..t_max
+        :param T: (k*t)xk ndarray, T(t) in (2) Eq for t = 1..t_max
+        :param R: (k*t)xk ndarray, R(t) in (2) Eq for t = 1..t_max
         '''
         self._m, self._t = y.shape
-        
         self._k, _ = self.state0.shape
         if self._k == 1:
             self.state0 = self.state0.T #kx1
-            self._k, _ = self.state0.shape 
+            self._k, _ = self.state0.shape
 
         if T is None:
             T = np.eye(self._k)
@@ -116,9 +118,6 @@ class KalmanFilter(Filter):
         return self
 
     def _get_container(self):
-        '''
-        This function set T, R if T and R are None and return them
-        '''
         m, k, t = self._m, self._k, self._t
 
         if self.state0 is None:
@@ -141,23 +140,13 @@ class KalmanFilter(Filter):
         m, k, t = self._m, self._k, self._t
         loglik = 0
         alpha_t, Pt, Kt, Ft, Lt, vt = self._get_container()
-
+ 
         for i in range(t):
             yt = y[:, i:i+1]  # mx1
-            Tt, Rt = T, R
-            if self._is_tvp:
-                Zt = Z[i * m:(i + 1) * m, :]
-                Ht = H[i*m:(i + 1)*m, :]  # mxm
-            else:
-                Zt = Z
-                Ht = H
-            if self.is_recursively_stacked_array(Z, m):
-                Zt = Z[:m, :]
-                Ht = H[:m, :]
-            # Ht = H[i*m:(i + 1)*m, :]  # mxm
-            # Zt = Z[i*m:(i + 1)*m, :]  # mxk
-            # Tt = T[i*k:(i + 1)*k, i*k:(i + 1)*k]  # kxk
-            # Rt = R[i * k:(i + 1) * k, i * k:(i + 1) * k]  # kxk
+            Ht = H[i*m:(i + 1)*m, :]  # mxm
+            Zt = Z[i*m:(i + 1)*m, :]  # mxk
+            Tt = T[i*k:(i + 1)*k, i*k:(i + 1)*k]  # kxk
+            Rt = R[i * k:(i + 1) * k, i * k:(i + 1) * k]  # kxk
             vt[i] = yt - np.dot(Zt, alpha_t[i])  # mx1
             Ft[i, :, :] = np.dot(np.dot(Zt, Pt), Zt.T) + Ht  # mxm
             Kt[i, :, :] = np.dot(np.dot(Tt, Pt), np.dot(Zt.T, inv(Ft[i])))  # kxm
@@ -174,9 +163,3 @@ class KalmanFilter(Filter):
         self.state = alpha_t
         self.state_var = Pt
         return self
-
-def is_recursively_stacked_array(array, m):
-    arr1 = array[0*m:1*m, :]
-    arr2 = array[1*m:2*m, :]
-    comparizon = (arr1 == arr2)
-    return np.sum(comparizon) == m*array.shape[1]

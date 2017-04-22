@@ -1,4 +1,5 @@
 import numpy as np
+import scipy.stats as scst
 
 def gewekes_P(y, a=.3, b=.4, c=.3, sl=0.05):
     """
@@ -16,7 +17,7 @@ def gewekes_P(y, a=.3, b=.4, c=.3, sl=0.05):
         std_a = np.std(y[:na,i])
         std_c = np.std(y[nc:,i])
         cd = (mean_a - mean_c)/((std_a/np.sqrt(na))+(std_c/np.sqrt(nc))) # convergence diagonostic
-        gewekesp[i] = 2*(1-np.norm.cdf(abs(cd), loc=0, scale=1))
+        gewekesp[i] = 2*(1-scst.norm.cdf(abs(cd), loc=0, scale=1))
     sls = sl*np.ones(d)
     # null hypo: the sampled distribution converges to posterior distributioon
     res = gewekesp > sls

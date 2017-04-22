@@ -132,8 +132,8 @@ class SetupForForecasting(object):
     def _direct(self, Y, lag):
         self.t = Y.shape[0] - self.h - 1
         Y1 = Y[self.h:, :][lag:self.t, :]
-        self.Y1 = Y1[:-self._h,:]
-        self.Y2 = Y[1:-self._h, :][:-self._h,:]
+        self.Y1 = Y1[:-self.h,:]
+        self.Y2 = Y[1:-self.h, :][:-self.h,:]
         return self
         # return DotDict( { 'Y1': Y1[:-self._h,:], 'Y2': Y[1:-self._h, :][:-self._h,:], 't': t } )
 

@@ -1,9 +1,9 @@
 import numpy as np
 from numpy.random import randn
 from numpy.linalg import cholesky, inv
-from bvar.base import Smoother
-from filter import KalmanFilter
-from bvar.utils import Y_Dimension_Checker, cholx
+from .base import Smoother
+from .filter import KalmanFilter
+from .utils import Y_Dimension_Checker, cholx
 
 class DisturbanceSmoother(Smoother):
     def smoothing(self, y, *, Z=None, alpha0=None, P0=None, T=None, R=None,
@@ -37,9 +37,8 @@ class DisturbanceSmoother(Smoother):
         r = np.zeros((t+1, k, 1))
         Rt = R
         for i in range(t-1, -1, -1):
-
-            Ht = H[i*m:(i+1)*m, :]
             Zt = Z[i*m:(i+1)*m, :]
+            Ht = H[i*m:(i+1)*m, :]
             w_hat[i, : m, :] = np.dot(np.dot(Ht, inv(F[i])), v[i]) - np.dot(np.dot(Ht, K[i].T), r[i+1]) #e_hat:mx1
             w_hat[i, m:m+k, :] = np.dot(np.dot(Q, Rt.T), r[i+1]) # n_hat: kx1
             r[i] = np.dot(np.dot(Zt.T, inv(F[i])), v[i]) + np.dot(L[i].T, r[i+1])
@@ -63,56 +62,43 @@ class DisturbanceSmoother(Smoother):
         return self
 
 class DurbinKoopmanSmoother(Smoother):
-    """
+    '''
        State Space Recursion Equations
        (1) Observation Eq: y(t) = Z(t)*state(t) + e(t) e(t) ~ N(0,H(t))
        (2) Transition Eq: state(t) = T(t)*state(t) + R(t)n(t) n(t) ~ N(0,Q(t))
-        - wplus: ndarray, drawed random vector w+(w=(e',n')') from density p(w)~N(0,diag{H1,...,Hn,Q1,...,Qn})
-        - m: int, the number of dimension of y
-        - k: int, the number of dimension(elements) in alpha(=state)
-        - t: int, the number of observation time
-        - Z: ndarray, Z(t) in (1) Eq for t = 1..t_max
-        - T: ndarray, T(t) in (2) Eq for t = 1..t_max
-        - R: ndarray, R(t) in (2) Eq for t = 1..t_max
-    """
-    def __init__(self, state0=None, state0_var=None, is_tvp='False'):
+        - wplus: ndarray, drawed random vector w+(w=(e',n')')
+                 from density p(w)~N(0,diag{H1,...,Hn,Q1,...,Qn})
+         m, k, t mean the dimension of y, state and the number of timeseries observation
+        :param y: mxt or txm ndarray
+        :param Z: (m*t)xk ndarray, Z(t) in (1) Eq for t = 1..t_max
+        :param H: (m*t)xm ndarray, variance of e(t) in (1) Eq for t = 1..t_max
+        :param Q: (k*t)xk ndarray, variance of n(t) in (2) Eq for t = 1..t_max
+        :param T: (k*t)xk ndarray, T(t) in (2) Eq for t = 1..t_max
+        :param R: (k*t)xk ndarray, R(t) in (2) Eq for t = 1..t_max
+    '''
+    def __init__(self, state0=None, state0_var=None):
         self.state0 = state0
         self.state0_var = state0_var
-        self._is_tvp = is_tvp
-        self._kalmanfilter = KalmanFilter(state0=state0, state0_var=state0_var, is_tvp=is_tvp)
+        self._kalmanfilter = KalmanFilter(state0=state0, state0_var=state0_var)
         self._smoother = DisturbanceSmoother()
 
     def draw_wplus(self, H, Q, s):
-        ''' w = (e,n)' ~ p(w) 
+        ''' w = (e,n)' ~ p(w)
             p(w)~N(0, diag{H1, ..., Hn, Q1, ..., Qn})
         '''
         m, k, t = self.m, self.k, self.t
         wplus = np.zeros(((m+k)*t, 1))
         mean = 0
-
         for i in range(t):
-            # if self._is_tvp: Ht = H[i*m:(i+1)*m, :]
-            # else: Ht = H
-            if self.is_recursively_stacked_array(H, m):
-                Ht = H[i*m:(i+1)*m, :]
-
-            Qt = Q[:s,:s][i*k:(i+1)*k, :]
+            Ht = H[i*m:(i+1)*m, :]
+            Qt = Q[:s, :s][i*k:(i+1)*k, :]
             wplus[i*(m+k):i*(m+k)+m, :] = mean + \
-                                          np.dot(cholesky(Ht).T,randn(m, 1))
+                                          np.dot(cholesky(Ht).T, randn(m, 1))
             wplus[i*(m+k)+m:i*(m+k)+(m+k), :] = mean + \
                                                 np.dot(cholesky(Qt).T, randn(k, 1))
         return wplus
 
     def state_space_recursion(self, wplus, Z, T=None, R=None):
-        '''
-        -wplus: ndarray, drawed random vector w+(w=(e',n')') from density p(w)~N(0,diag{H1,...,Hn,Q1,...,Qn})
-        -m: int, the number of dimension of y
-        -k: int, the number of dimension(elements) in alpha(=state)
-        -t: int, the number of observation time
-        -Z: ndarray, Z(t) in (1) Eq for t = 1..t_max
-        -T: ndarray, T(t) in (2) Eq for t = 1..t_max
-        -R: ndarray, R(t) in (2) Eq for t = 1..t_max
-        '''
         m, k, t = self.m, self.k, self.t
         if T is None:
             Tt = np.eye(k)
@@ -122,15 +108,11 @@ class DurbinKoopmanSmoother(Smoother):
         mk = m + k
         state = np.zeros((k, t + 1))  # assume state0 ~ N(0,P1)
         y_plus = np.zeros((m, t))
-
         for i in range(t):
 
             et = wplus[i * mk:i*mk+m, :]
             nt = wplus[i * mk+m:i*mk+mk, :]
-            if self._is_tvp: Zt = Z[i*m:(i + 1)*m, :]  # mxk
-            else: Zt = Z
-            if self.is_recursively_stacked_array(Z, m):
-                Zt = Z[i*m:(i+1)*m, :]
+            Zt = Z[i*m:(i+1)*m, :]
             y_plus[:, i] = (np.dot(Zt, state[:, i]) + et).T  # mx1.T = 1xm
             state[:, i + 1] = (np.dot(Tt, state[:, i]) + np.dot(Rt, nt)).T  # kx1.T = 1xk
 
@@ -143,11 +125,21 @@ class DurbinKoopmanSmoother(Smoother):
         K, F, L, v = self._kalmanfilter.K, self._kalmanfilter.F, \
                      self._kalmanfilter.L, self._kalmanfilter.v
         self._smoother.smoothing(y, Z=Z, alpha0=self.state0, P0=self.state0_var, T=T,
-                                R=R, H=H, Q=Q, a=filtered_state, K=K, F=F, L=L, v=v)
+                                 R=R, H=H, Q=Q, a=filtered_state, K=K, F=F, L=L, v=v)
         return self._smoother.w_hat, self._smoother.alpha_hat
 
     @Y_Dimension_Checker
     def smoothing(self, y, *, Z=None, T=None, R=None, H=None, Q=None, s=None):
+        '''
+         m, k, t mean the dimension of y, state and the number of timeseries observation
+        :param y: mxt or txm ndarray
+        :param Z: (m*t)xk ndarray, Z(t) in (1) Eq for t = 1..t_max
+        :param H: (m*t)xm ndarray, variance of e(t) in (1) Eq for t = 1..t_max
+        :param Q: (k*t)xk ndarray, variance of n(t) in (2) Eq for t = 1..t_max
+        :param T: (k*t)xk ndarray, T(t) in (2) Eq for t = 1..t_max
+        :param R: (k*t)xk ndarray, R(t) in (2) Eq for t = 1..t_max
+        '''
+
         self.m, self.t = y.shape
         _, self.k = self.Z.shape
 
@@ -172,7 +164,7 @@ class CarterKohn(object):
     def __init__(self, state0, state0_var):
         self._kalmanfilter = KalmanFilter(state0=state0, state0_var=state0_var)
 
-    def estimate(self, *, Z=None, H=None, Q=None, T=None, R=None,
+    def estimate(self, y, *, Z=None, H=None, Q=None, T=None, R=None,
                  MU=None, s=None):
         '''
             Observation Eq: Y(t) = Z*state(t) + A*z(t) + e(t), var(e(t)) = H
@@ -190,18 +182,18 @@ class CarterKohn(object):
         state = self._kalmanfilter.state
         state_var = self._kalmanfilter.state_var
 
-        t, ns = state.shape
-        if t < ns:
+        t, k = state.shape
+        if t < k:
             state = state.T
-            t, ns = state.shape
+            t, k = state.shape
         if s is None:
-            s = ns
+            s = k
         if MU is None:
-            MU = np.zeros((1, ns))
+            MU = np.zeros((1, k))
 
-        drawed_state = np.zeros((t, ns))
-        wa = randn(t, ns)
-        f = T[:s, :] #sxns
+        drawed_state = np.zeros((t, k))
+        wa = randn(t, k)
+        f = T[:s, :] #sxk
         q = Q[:s, :s]
         mu = MU[:, :s]
         p00 = np.squeeze(state_var[t-1, :s, :s])
@@ -209,7 +201,7 @@ class CarterKohn(object):
 
         for i in range(t-2, 0, -1):
 
-            pt = np.squeeze(state_var[i, :, :]) # nsxns
+            pt = np.squeeze(state_var[i, :, :]) # kxk
             temp = np.dot(np.dot(pt, f.T), inv(np.dot(np.dot(f, pt), f.T))+q)
             mean = state[i, :] + np.dot(temp, (drawed_state[i+1, :s] - \
                                                mu - np.dot(state[i, :], f.T)).T).T
@@ -218,12 +210,3 @@ class CarterKohn(object):
 
         self.drawed_state = drawed_state[:, :s]
         return self
-
-def is_recursively_stacked_array(array, m, t):
-    n_obs, n_dim = array.shape
-    if n_obs == m*t:
-
-    arr1 = array[0*m:1*m, :]
-    arr2 = array[1*m:2*m, :]
-    comparizon = (arr1 == arr2)
-    return np.sum(comparizon) == m*array.shape[1]
