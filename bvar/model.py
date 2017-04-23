@@ -27,7 +27,7 @@ class BayesianLinearRegression(BayesianModel, Sampler):
                                    {"NonConjugate": "Indep_NormalGamma-NonInformative"},
         :param alpha0: mean of Prior Normaldistribution
         :param V0: variance of Prior Normaldistribution
-        :param V0_scale: scale of variance of Prior Normaldistribution
+        :param V0_scale: scale parameter for variance of Prior Normaldistribution
         :param v0: degree of freedom of Prior  WishartDistribution
         :param S0: scale matrix of freedom of Prior  WishartDistribution
         :param stability_check: boolen, check sampled coeff is stable
@@ -45,14 +45,15 @@ class BayesianLinearRegression(BayesianModel, Sampler):
         self.S0 = S0
         self.stability_check = stability_check
 
-    def estimate(self, Y: object, X: object):
-        
+    def estimate(self, Y: object, X: object, sigma):
+
         self.set_prior(Y, X)
         if self.n_save >= 1:
             self.coef = np.empty((self.n_save, self.k))
             self.sigma = np.empty((self.n_save, self.m, self.m))
+            self.reshaped_coef = np.empty(((self.n_save, self.k, self.m)))
 
-        self.gibbs_sampling()
+        self.gibbs_sampling(Y, X, sigma)
         return self
 
     def set_prior(self, Y, X):
@@ -102,37 +103,42 @@ class BayesianLinearRegression(BayesianModel, Sampler):
                                                               dist_type=dist_type)
         return self
 
-    def gibbs_sampling(self):
-        ols = self.fit(self.Y, self.X, method='ls')
+    def gibbs_sampling(self, Y, X, sigma0):
+        ols = self.fit(Y, X, method='ls')
+        sigma = np.eye(self.m)
         if self.prior_option_key is 'Conjugate':
-            if self.prior_type is 'NonInformative':
-                sigma = np.eye(self.Y.shape[1])
-            elif self.prior_type is 'Informative':
+            if self.prior_type is 'Informative':
                 sigma = ols.sigma
 
             for i in range(self.n_iter):
                 coef, sigma = self.sampling_from_posterior(coef_ols=ols.coef,
                                                            sigma=sigma,
                                                            sse_ols=ols.sse)
+                reshaped_coef = np.reshape(coef, (self.k, self.m), order='F')
                 self._save(coef, sigma, i)
 
         elif self.prior_option_key is 'NonConjugate':
-            sigma = np.eye(self.m)
+            if self.prior_type is 'Informative':
+                sigma = sigma0
 
             for i in range(self.n_iter):
                 coef, sigma = self.sampling_from_conditional_posterior(coef_ols=ols.coef,
                                                                        sigma=sigma)
+                reshaped_coef = np.reshape(coef, (self.k, self.m), order='F')
                 self._save(coef, sigma, i)
         return self
 
     def _save(self, coef, sigma, i):
+        reshaped_coef = np.reshape(coef, (self.k, self.m), order='F')
         if i >= self.n_save:
             self.coef[i-self.n_save:i-self.n_save+1, :] = coef[:, 0:1].T
             self.sigma[i-self.n_save:i-self.n_save+1, :, :] = sigma
+            self.reshaped_coef[i-self.n_save:i-self.n_save+1, :, :] = reshaped_coef
 
         if self.n_save == 1:
             self.coef = coef[:, 0:1]
             self.sigma = sigma
+            self.reshaped_coef = reshaped_coef
 
     def sampling_from_posterior(self, *, coef_ols=None, sigma=None, sse_ols=None):
         self.get_posterior_distribution(coef_ols=coef_ols,
@@ -155,7 +161,7 @@ class BayesianLinearRegression(BayesianModel, Sampler):
         return coef_drawed, sigma_drawed
 
     def sampling_from_conditional_posterior(self, *, coef_ols=None, sigma=None):
-    
+
         self.get_conditional_posterior_distribution(coef_ols=coef_ols,
                                                     drawed_value=sigma,
                                                     dist_type='Normal')
@@ -256,11 +262,10 @@ class NonConjugatePrior(NaturalConjugatePrior):
                                                drawed_value=None, dist_type=None):
         '''
         conditional posterior distribution
-        :param coef_ols: nparray, estimated coefi by ols  
+        :param coef_ols: nparray, estimated coefi by ols
         :param drawed_value: nparray, drawed_value is drawed array from conditional Normal posterior distribution 
-                                    or drawed array from conditional Wishart posterior distribution 
+                             or drawed array from conditional Wishart posterior distribution 
         :param dist_type: str, distribution type, "Normal", "Wishart"  
-        :return: 
         '''
         if dist_type is 'Normal':
             self.normal_parameters = self._get_normal_posterior_parameters(coef_ols, drawed_value)
@@ -305,33 +310,28 @@ class NonConjugatePrior(NaturalConjugatePrior):
 class FactorAugumentedVARX(BayesianLinearRegression):
 
     def __init__(self, n_iter=100, n_save=50, lag=1, var_lag=1, n_factor=3,
-                 alpha0=None, V0=None, V0_scale=1, v0=None, S0=None,
                  smoother_option='DurbinKoopman', is_standardize=True):
 
-        super().__init__(n_iter=n_iter, n_save=n_save, lag=lag, y_type="univariate",
-                         prior_option={'NonConjugate':'Indep_NormalWishart-NonInformative'},
-                         alpha0=alpha0, V0=V0, V0_scale=V0_scale, S0=S0)
         self.smoother_option = smoother_option
         self.n_factor = n_factor
         self.var_lag = var_lag
         self.is_standardize = is_standardize
 
-    def get_principle_component(self, Y):
+    def _get_principle_component(self, Y):
         from utils import get_principle_component
         return get_principle_component(Y, self.n_factor)
 
-    def estimate(self, Y, X, z, w):
+    def estimate(self, Y, z, w):
         '''Assume Y, X has right form for VAR model to estimate
            must include or implement checking dimension of Y, X for estimating'''
         t, m = Y.shape
 
         if self.is_standardize is False:
             Y = standardize(Y)
-            X = standardize(X)
             z = standardize(z)
 
         if self.n_factor != 0:
-            factors, _ = self.get_principle_component(Y)
+            factors, _ = self._get_principle_component(Y)
 
         self._W = self._get_W(w, m)
         self.gibbs_sampling(Y, z, factors)
@@ -354,7 +354,6 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             self._F = np.empty((m, m*lag)) #(mxm)x!
             self._e = np.empty((t-lag, m))
             
-            BayesianLinearRegression(n_iter=1,n_save=1,lag=lag)
             for ind in range(m):
                 y_i = Y[:, ind: ind + 1][lag:, :]
                 z_i = z[:, ind: ind + 1][lag:, :]
@@ -364,7 +363,14 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                 x = self._get_factor_loading_regressor(y_i_lag, z_i, z_i_lag, factors)
 
                 sigma0 = r[ind]
-                coef_i, _, sigma_i = self.sampling_parameters(y_i, x, sigma0)
+
+                me_model = BayesianLinearRegression(n_iter=1, n_save=1, lag=0, y_type='univariate',
+                                                    prior_option={'NonConjugate':'Indep_NormalWishart-Informative'},
+                                                    alpha0=np.zeros((x.shape[1], 1)),
+                                                    V0=np.eye(x.shape[1]), V0_scale=1,
+                                                    v0=0, S0=0).estimate(y_i, x, sigma0)
+
+                coef_i, sigma_i = me_model.coef, me_model.sigma
                 self._hold_drawed_factor_loadings(coef_i, ind, m)
                 r[ind:ind+1, :] = sigma_i
                 self._e[:, ind:ind+1] = y_i - np.dot(x, coef_i)
@@ -392,10 +398,14 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             var_setup = SetupForVAR(lag=var_lag, const=False).prepare(state1)
             state_var_Y = var_setup.Y
             state_var_X = var_setup.X
-            coef, reshaped_coef, sigma = self.sampling_parameters(state_var_Y,
-                                                                  state_var_X,
-                                                                  sigma)
-            self._u = state_var_Y[:,n] - np.dot(state_var_X, reshaped_coef)
+            te_model = BaseLinearRegression(n_iter=1, n_save=1, lag=0, y_type='multivariate',
+                                            prior_option={'NonConjugate':'Indep_NormalWishart-NonInformative'},
+                                            alpha0=np.zeros((state_var_X.shape[1], 1)),
+                                            V0=np.eye(state_var_X.shape[1]), V0_scale=1,
+                                            v0=0, S0=0).estimate(state_var_Y, state_var_X, sigma)
+
+            coef, reshaped_coef, sigma = te_model.coef, te_model.reshaped_coef, te_model.sigma
+            self._u = state_var_Y[:, n] - np.dot(state_var_X, reshaped_coef)
 
             # Z_2 = np.empty((0, self._Gamma.shape[1]+lag))
             # for i in range(m):
@@ -410,8 +420,9 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                                                                    sigma, lag, var_lag, var_setup.t)
             state0, \
             state0_var = self._get_initial_value_of_state(state, var_lag)
-            state = DurbinKoopmanSmoother(state0, state0_var).smoothing(state_var_Y, Z=Z, T=T,
-                                                                        R=R, H=H, Q=Q).state_tilda[:, :3]
+            if self.smoother_option is 'DurbinKoopman':
+                state = DurbinKoopmanSmoother(state0, state0_var).smoothing(state_var_Y, Z=Z, T=T,
+                                                                            R=R, H=H, Q=Q).state_tilda[:, :n]
 
     def sampling_parameters(self, y, x, sigma0):
         m, k = y.shape[1], x.shape[1]
@@ -434,7 +445,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             w_1[:, i:i+1] = 1
             w_2 = w[i:i+1, :]
             w_2[:, i:i+1] = 0
-            W[i:(i+1)*2, :] = np.r_[w_1, w_2]
+            W[i*2:(i+1)*2, :] = np.r_[w_1, w_2]
         return W
 
     def _hold_drawed_factor_loadings(self, coef, n, m):

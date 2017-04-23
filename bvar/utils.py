@@ -8,13 +8,15 @@ from functools import wraps
 def array_checker(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
-        arr = args[0]
+        new_args = list(args)
+        arr = new_args.pop(0)
         if not isinstance(arr, np.ndarray):
             arr = np.atleast_2d(arr)
         T, N = arr.shape
         if T < N:
             arr = arr.T
-        return func(arr,**kwargs)
+        new_args.insert(0, arr)
+        return func(*new_args, **kwargs)
     return wrapper
 
 class NoneValueChecker(object):
@@ -90,7 +92,7 @@ def standardize(arr):
     return (arr - col_mean)/col_std
 
 @array_checker
-def lag(arr,L=0):
+def lag(arr, L=0):
     '''
     Input:
      - arr: Array matrix
