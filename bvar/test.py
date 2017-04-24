@@ -1,9 +1,18 @@
-DATA_PATH = '/Users/junpyolee/Google Drive/data'
-MODULE_PATH = '/Users/junpyolee/projects/bvar/bvar'
-
 import numpy as np
 import pandas as pd
 import os
+import sys
+
+MAC = True
+if sys.platform == 'win32':
+    WIN = True
+
+if MAC:
+    DATA_PATH = '/Users/junpyolee/Google Drive/data'
+    MODULE_PATH = '/Users/junpyolee/projects/bvar/bvar'
+if WIN:
+    DATA_PATH = 'D:\\Google Drive\\data'
+    MODULE_PATH = 'C:\\project\\bvar\\bvar'
 
 # DATA import
 os.chdir(DATA_PATH)

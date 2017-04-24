@@ -6,3 +6,19 @@
 **/vscode
 **/.ipynb_checkpoints
 **/.idea
+
+# example of gitignore
+# a comment - 이 줄은 무시한다.
+# 확장자가 .a인 파일 무시
+#*.a
+# 윗 줄에서 확장자가 .a인 파일은 무시하게 했지만 lib.a는 무시하지 않는다.
+#!lib.a
+# 루트 디렉토리에 있는 TODO파일은 무시하고 subdir/TODO처럼 하위디렉토리에 있는 파일은 무시하지 않는다.
+#/TODO
+# build/ 디렉토리에 있는 모든 파일은 무시한다.
+#build/
+#build/
+# `doc/notes.txt`같은 파일은 무시하고 doc/server/arch.txt같은 파일은 무시하지 않는다.
+#doc/*.txt
+# `doc` 디렉토리 아래의 모든 .txt 파일을 무시한다.
+# doc/**/*.txt
