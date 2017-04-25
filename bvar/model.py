@@ -164,8 +164,7 @@ class BayesianLinearRegression(BayesianModel, Sampler):
 
         coef_drawed = self.sampling_from_normal(mean, variance)
 
-        self.get_conditional_posterior_distribution(coef_ols=coef_ols,
-                                                    drawed_value=coef_drawed,
+        self.get_conditional_posterior_distribution(drawed_value=coef_drawed,
                                                     dist_type='Wishart')
         scale, dof = self.posterior.wishart_parameters.scale, \
                      self.posterior.wishart_parameters.dof
@@ -247,7 +246,7 @@ class NaturalConjugatePrior(BasePrior):
         '''
         if np.sum(self.V0) != 0:
             return inv(self.V0)
-        return 0
+        return np.zeros(self.V0.shape)
 
 class NonConjugatePrior(NaturalConjugatePrior):
 
@@ -290,7 +289,7 @@ class NonConjugatePrior(NaturalConjugatePrior):
         
         self.V = inv(inv_V + np.kron(inv(sigma), np.dot(X.T, X)))
         self.M = np.dot(self.V,
-                       (np.dot(inv_V, alpha0) + np.kron(inv(sigma), np.dot(np.dot(X.T, X), alpha_ols))))
+                       (np.dot(inv_V, alpha0) + np.dot(np.kron(inv(sigma), np.dot(X.T, X)), vec(alpha_ols))))
         return DotDict({'mean': self.M,
                         'variance': self.V})
 
@@ -309,7 +308,7 @@ class NonConjugatePrior(NaturalConjugatePrior):
         self.v = t + v0
         reshaped_alpha = np.reshape(alpha, (k, m), order='F') #alpha:k*mx1
         self.sigma = np.dot((Y - np.dot(X, reshaped_alpha)).T,
-                             (Y - np.dot(X, reshaped_alpha)))
+                            (Y - np.dot(X, reshaped_alpha)))
         return DotDict({'scale': self.sigma,
                         'dof': self.v})
 
@@ -407,15 +406,15 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             var_setup = SetupForVAR(lag=var_lag, const=False).prepare(state1)
             state_var_Y = var_setup.Y
             state_var_X = var_setup.X
+            alpha0 = np.zeros((state_var_Y.shape[1]*state_var_X.shape[1], 1))
             V0 = np.zeros((state_var_Y.shape[1]*state_var_X.shape[1],
                            state_var_Y.shape[1]*state_var_X.shape[1]))
             te_model = BayesianLinearRegression(n_iter=1, n_save=1, lag=0, y_type='multivariate',
                                                 prior_option={'NonConjugate':'Indep_NormalWishart-NonInformative'},
-                                                alpha0=np.zeros((state_var_X.shape[1], 1)),
-                                                V0=V0, V0_scale=1,v0=0, S0=0).estimate(state_var_Y, state_var_X, sigma)
+                                                alpha0=alpha0, V0=V0, V0_scale=1,v0=0, S0=0).estimate(state_var_Y, state_var_X, sigma)
 
             coef, reshaped_coef, sigma = te_model.coef, te_model.reshaped_coef, te_model.sigma
-            self._u = state_var_Y[:, n] - np.dot(state_var_X, reshaped_coef)
+            self._u = state_var_Y[:, :n] - np.dot(state_var_X, reshaped_coef)[:,:n]
 
             # Z_2 = np.empty((0, self._Gamma.shape[1]+lag))
             # for i in range(m):
@@ -429,10 +428,10 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             Z, H, T, Q, R = self._get_state_space_model_parameters(coef, reshaped_coef,
                                                                    sigma, lag, var_lag, var_setup.t)
             state0, \
-            state0_var = self._get_initial_value_of_state(state, var_lag)
+            state0_var = self._get_initial_value_of_state(state1, var_lag)
             if self.smoother_option is 'DurbinKoopman':
                 state = DurbinKoopmanSmoother(state0, state0_var).smoothing(state_var_Y, Z=Z, T=T,
-                                                                            R=R, H=H, Q=Q).state_tilda[:, :n]
+                                                                            R=R, H=H, Q=Q, s=n).state_tilda[:, :n]
     def _get_W(self, w, m):
         W = np.empty((2*m, m))
         w_1 = np.zeros((1, m))
@@ -464,7 +463,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                                                  self._W[2*n:2*(n+1), :])
         return self
 
-    def _get_initial_value_of_state(state, lag):
+    def _get_initial_value_of_state(self, state, lag):
         if lag >= 2:
             temp0 = np.empty((1, 0))
             for i in range(lag-1, 0, -1):

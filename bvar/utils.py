@@ -36,12 +36,12 @@ class Y_Dimension_Checker(object):
         self.func = func
 
     def __call__(self, *args, **kwargs):
-        pargs = list()
-        for arg in args:
+        pargs = list(args)
+        for i, arg in enumerate(args):
             if isinstance(arg, np.ndarray):
                 m, t = arg.shape
-                if m > t: pargs.append(arg.T)
-                else: pargs.append(arg)
+                if m > t:
+                    pargs[i] = arg.T
         return self.func(*pargs, **kwargs)
 
 def is_coefficient_stable(coef, n, l):
@@ -112,7 +112,7 @@ def cholx(x):
         return np.real(sqrtm(x)).T
 
 def vec(data):
-    np, m = data.shape
+    t, m = data.shape
     vec = np.empty((0, 1))
     for i in range(m):
         data_col = np.atleast_2d(data[:, i]).T

@@ -138,10 +138,11 @@ class DurbinKoopmanSmoother(Smoother):
         :param Q: (k*t)xk ndarray, variance of n(t) in (2) Eq for t = 1..t_max
         :param T: (k*t)xk ndarray, T(t) in (2) Eq for t = 1..t_max
         :param R: (k*t)xk ndarray, R(t) in (2) Eq for t = 1..t_max
+        :param s: int, selection number
         '''
 
         self.m, self.t = y.shape
-        _, self.k = self.Z.shape
+        _, self.k = Z.shape
 
         if self.state0 is None:
             self.state0 = np.zeros((self.k, 1))
