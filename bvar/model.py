@@ -426,7 +426,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             #     Z_2 = np.r_(Z_2, z2) #(mx(n+lag))
 
             Z, H, T, Q, R = self._get_state_space_model_parameters(coef, reshaped_coef, sigma, r,
-                                                                   lag, var_lag, var_setup.t)
+                                                                   lag, var_lag, t)
             state0, \
             state0_var = self._get_initial_value_of_state(state1, var_lag)
             if self.smoother_option is 'DurbinKoopman':
@@ -502,9 +502,9 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             Q[:m_var, :m_var] = sigma
         H = np.diag(r[:, 0]) #mxm
         R = np.eye(k_var)
-        return np.tile(Z, (t, 1)), np.tile(H, (t, 1)),\
-               np.tile(T, (t, 1)), np.tile(Q, (t, 1)),\
-               np.tile(R, (t, 1))
+        return np.tile(Z, (t-lag, 1)), np.tile(H, (t-lag, 1)),\
+               np.tile(T, (t-lag, 1)), np.tile(Q, (t-lag, 1)),\
+               np.tile(R, (t-lag, 1))
 
     def _sampling_parameters(self, y, x, sigma0):
         m, k = y.shape[1], x.shape[1]
