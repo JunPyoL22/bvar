@@ -35,11 +35,14 @@ class DisturbanceSmoother(Smoother):
         t, k, m = self.t, self.k, self.m
         w_hat = np.zeros((t, m+k, 1))
         r = np.zeros((t+1, k, 1))
-        Rt = R
         for i in range(t-1, -1, -1):
             Zt = Z[i*m:(i+1)*m, :]
             Ht = H[i*m:(i+1)*m, :]
-            w_hat[i, : m, :] = np.dot(np.dot(Ht, inv(F[i])), v[i]) - np.dot(np.dot(Ht, K[i].T), r[i+1]) #e_hat:mx1
+            Rt = R[i*k:(i+1)*k, :]
+            Qt = Q[i*k:(i+1)*k, :]
+            
+            w_hat[i, : m, :] = np.dot(np.dot(Ht, inv(F[i])), v[i]) - \
+                               np.dot(np.dot(Ht, K[i].T), r[i+1]) #e_hat:mx1
             w_hat[i, m:m+k, :] = np.dot(np.dot(Q, Rt.T), r[i+1]) # n_hat: kx1
             r[i] = np.dot(np.dot(Zt.T, inv(F[i])), v[i]) + np.dot(L[i].T, r[i+1])
 
