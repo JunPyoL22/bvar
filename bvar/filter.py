@@ -141,9 +141,8 @@ class KalmanFilter(Filter):
         m, k, t,  = self._m, self._k, self._t
         loglik = 0
         alpha_t, Pt, Kt, Ft, Lt, vt = self._get_container()
-        print('total loop: ', t)
+
         for i in range(t):
-            print('start loop: ', i)
             yt = y[:, i:i+1]  # mx1
             Ht = H[i*m:(i + 1)*m, :]  #  mxm
             Zt = Z[i*m:(i + 1)*m, :]  #  mxk
@@ -159,7 +158,6 @@ class KalmanFilter(Filter):
             Pt = np.dot(np.dot(Tt, Pt), Lt[i].T) + np.dot(np.dot(Rt, Qt), Rt.T)  # kxk
             loglik = loglik + np.log10(det(Ft[i])) + np.dot(np.dot(vt[i].T,
                                                                    inv(Ft[i])), vt[i])
-            print('End loop: ', i)
         self.K = Kt
         self.F = Ft
         self.L = Lt
