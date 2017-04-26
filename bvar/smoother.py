@@ -77,9 +77,14 @@ class DurbinKoopmanSmoother(Smoother):
         :param R: (k*t)xk ndarray, R(t) in (2) Eq for t = 1..t_max
     '''
     def __init__(self, state0=None, state0_var=None):
+        '''
+        :param state0: ndarray, initial array of state
+        :param state0_var: ndarray, initial variance of state 
+        '''
         self.state0 = state0
         self.state0_var = state0_var
-        self._kalmanfilter = KalmanFilter(state0=state0, state0_var=state0_var)
+        self._kalmanfilter = KalmanFilter(state0=state0,
+                                          state0_var=state0_var)
         self._smoother = DisturbanceSmoother()
 
     def draw_wplus(self, H, Q, s):

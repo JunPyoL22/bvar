@@ -96,8 +96,8 @@ class KalmanFilter(Filter):
         (2) Transition Eq: state(t) = T(t)*state(t) + R(t)n(t), n(t) ~ N(0,Q(t))
          m, k, t mean the dimension of y, state and the number of timeseries observation
         :param y: mxt or txm ndarray
-        :param Z: (m*t)xk ndarray, Z(t) in (1) Eq for t = 1..t_max
-        :param H: (m*t)xm ndarray, variance of e(t) in (1) Eq for t = 1..t_max
+        :param Z: (*t)xk ndarray, Z(t) in (1) Eq for t = 1..t_max
+        :param H: (*t)xm ndarray, variance of e(t) in (1) Eq for t = 1..t_max
         :param Q: (k*t)xk ndarray, variance of n(t) in (2) Eq for t = 1..t_max
         :param T: (k*t)xk ndarray, T(t) in (2) Eq for t = 1..t_max
         :param R: (k*t)xk ndarray, R(t) in (2) Eq for t = 1..t_max
@@ -109,16 +109,15 @@ class KalmanFilter(Filter):
             self._k, _ = self.state0.shape
 
         if T is None:
-            T = np.eye(self._k)
-            # T = np.eye(self._k * self._t) #kxt
+            T = np.tile(np.eye(self._k), (self._t, 1)) #(kxt)xk_
         if R is None:
-            R = np.eye(self._k * self._k) #kxt
+            R = np.tile(np.eye(self._k), (self._t, 1)) #(kxt)xk_
 
         self.forward_recursion_to_estimate_state(y, Z, T, R, H, Q)
         return self
 
     def _get_container(self):
-        m, k, t = self._m, self._k, self._t
+        m, k, t,  = self._m, self._k, self._t
 
         if self.state0 is None:
             state = np.zeros((t + 1, k, 1))
@@ -128,33 +127,39 @@ class KalmanFilter(Filter):
 
         if self.state0_var is None:
             state_var = np.zeros((k, k))
+        else:
+            state_var = self.state0_var
 
         K = np.zeros((t, k, m))
-        F = np.zeros((t, m, m))
+        F = np.zeros((t, m ,m))
         L = np.zeros((t, k, k))
-        v = np.zeros((t, k, 1))
+        v = np.zeros((t, m, 1))
 
         return state, state_var, K, F, L, v
 
     def forward_recursion_to_estimate_state(self, y, Z, T, R, H, Q):
-        m, k, t = self._m, self._k, self._t
+        m, k, t,  = self._m, self._k, self._t
         loglik = 0
         alpha_t, Pt, Kt, Ft, Lt, vt = self._get_container()
- 
+        print('total loop: ', t)
         for i in range(t):
+            print('start loop: ', i)
             yt = y[:, i:i+1]  # mx1
-            Ht = H[i*m:(i + 1)*m, :]  # mxm
-            Zt = Z[i*m:(i + 1)*m, :]  # mxk
-            Tt = T[i*k:(i + 1)*k, i*k:(i + 1)*k]  # kxk
-            Rt = R[i * k:(i + 1) * k, i * k:(i + 1) * k]  # kxk
+            Ht = H[i*m:(i + 1)*m, :]  #  mxm
+            Zt = Z[i*m:(i + 1)*m, :]  #  mxk
+            Tt = T[i*k:(i + 1)*k, :]  # kxk
+            Rt = R[i*k:(i + 1)*k, :]  # kxk
+            Qt = Q[i*k:(i + 1)*k, :]
+
             vt[i] = yt - np.dot(Zt, alpha_t[i])  # mx1
             Ft[i, :, :] = np.dot(np.dot(Zt, Pt), Zt.T) + Ht  # mxm
             Kt[i, :, :] = np.dot(np.dot(Tt, Pt), np.dot(Zt.T, inv(Ft[i])))  # kxm
             Lt[i, :, :] = Tt - np.dot(Kt[i], Zt)  # kxk
             alpha_t[i + 1] = np.dot(Tt, alpha_t[i]) + np.dot(Kt[i], vt[i])  # kx1
-            Pt = np.dot(np.dot(Tt, Pt), Lt[i].T) + np.dot(np.dot(Rt, Q), Rt.T)  # kxk
+            Pt = np.dot(np.dot(Tt, Pt), Lt[i].T) + np.dot(np.dot(Rt, Qt), Rt.T)  # kxk
             loglik = loglik + np.log10(det(Ft[i])) + np.dot(np.dot(vt[i].T,
                                                                    inv(Ft[i])), vt[i])
+            print('End loop: ', i)
         self.K = Kt
         self.F = Ft
         self.L = Lt

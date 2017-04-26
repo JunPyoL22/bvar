@@ -388,7 +388,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                 self._F[:, (i-1)*m:i*m] = np.dot(invG, self._H[:, (i-1)*m:i*m]) #mxm
 
             self._Gamma = np.dot(invG, self._Psi) #mxn_factor
-            self._St = np.dot(invG, self._e.T).T #mx1
+            self._St = np.dot(invG, self._e.T).T #txm
 
             FX = dict()
             for i in range(1, lag+1):
@@ -425,12 +425,12 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             #         z2 = np.c_[tiled_Gamma, Z_temp]
             #     Z_2 = np.r_(Z_2, z2) #(mx(n+lag))
 
-            Z, H, T, Q, R = self._get_state_space_model_parameters(coef, reshaped_coef,
-                                                                   sigma, lag, var_lag, var_setup.t)
+            Z, H, T, Q, R = self._get_state_space_model_parameters(coef, reshaped_coef, sigma, r,
+                                                                   lag, var_lag, var_setup.t)
             state0, \
             state0_var = self._get_initial_value_of_state(state1, var_lag)
             if self.smoother_option is 'DurbinKoopman':
-                state = DurbinKoopmanSmoother(state0, state0_var).smoothing(state_var_Y, Z=Z, T=T,
+                state = DurbinKoopmanSmoother(state0, state0_var).smoothing(Y[lag:, :], Z=Z, T=T,
                                                                             R=R, H=H, Q=Q, s=n).state_tilda[:, :n]
     def _get_W(self, w, m):
         W = np.empty((2*m, m))
@@ -476,7 +476,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
         return state0, state0_var
 
     def _get_state_space_model_parameters(self, coef, reshaped_coef, sigma,
-                                          lag, var_lag, t):
+                                          r, lag, var_lag, t):
         '''
         This function returns parameters on 
         state space model with Non-timevaring parameters and Non-stochastic volatilty
@@ -490,7 +490,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             Z = np.append(Z, np.ones((m, 1)), axis=1)
         # for indentifying factors
         Z[:n, :n] = np.eye(n)
-        Z[:n, n:n+1] = np.ones((n, 1))
+        Z[:n, n:n+1] = np.zeros((n, 1))
 
         if var_lag == 1:
             T = reshaped_coef.T
@@ -500,7 +500,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                       np.eye(m_var*(var_lag-1), k_var)]
             Q = np.zeros((k_var, k_var))
             Q[:m_var, :m_var] = sigma
-        H = np.diag(self._St[:, 0])  # mxm
+        H = np.diag(r[:, 0]) #mxm
         R = np.eye(k_var)
         return np.tile(Z, (t, 1)), np.tile(H, (t, 1)),\
                np.tile(T, (t, 1)), np.tile(Q, (t, 1)),\

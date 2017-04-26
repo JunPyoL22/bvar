@@ -35,6 +35,11 @@ class Y_Dimension_Checker(object):
     def __init__(self, func):
         self.func = func
 
+    def __get__(self, instance, owner):
+        self.cls = owner
+        self.obj = instance
+        return self.__call__
+
     def __call__(self, *args, **kwargs):
         pargs = list(args)
         for i, arg in enumerate(args):
@@ -42,7 +47,9 @@ class Y_Dimension_Checker(object):
                 m, t = arg.shape
                 if m > t:
                     pargs[i] = arg.T
-        return self.func(*pargs, **kwargs)
+        if self.obj:
+            return self.func.__call__(self.obj, *pargs, **kwargs)
+        return self.func.__call__(*pargs, **kwargs)
 
 def is_coefficient_stable(coef, n, l):
     '''
