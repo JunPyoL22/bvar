@@ -26,7 +26,7 @@ class DisturbanceSmoother(Smoother):
         :param V: ndarray,
         '''
         self.m, self.t = y.shape
-        self.k, _ = alpha0.shape
+        _, self.k = alpha0.shape
         self.backward_recursion_to_estimate_w_hat(H, R, Z, v, F, L, K, Q)
         self.forward_recursion_to_estimate_alpha_hat(a, P0, T, R, Q)
         return self
@@ -43,7 +43,7 @@ class DisturbanceSmoother(Smoother):
             
             w_hat[i, : m, :] = np.dot(np.dot(Ht, inv(F[i])), v[i]) - \
                                np.dot(np.dot(Ht, K[i].T), r[i+1]) #e_hat:mx1
-            w_hat[i, m:m+k, :] = np.dot(np.dot(Q, Rt.T), r[i+1]) # n_hat: kx1
+            w_hat[i, m:m+k, :] = np.dot(np.dot(Qt, Rt.T), r[i+1]) # n_hat: kx1
             r[i] = np.dot(np.dot(Zt.T, inv(F[i])), v[i]) + np.dot(L[i].T, r[i+1])
 
         self.w_hat = w_hat
@@ -55,11 +55,12 @@ class DisturbanceSmoother(Smoother):
         alpha_hat = np.zeros((t + 1, k, 1))
         alpha_hat[0] = a[0] + np.dot(P0, self.r[0])
 
-        Tt = T
-        Rt = R
         for i in range(t):
+            Rt = R[i * k:(i + 1) * k, :]
+            Qt = Q[i * k:(i + 1) * k, :]
+            Tt = T[i * k:(i + 1) * k, :]
             alpha_hat[i + 1] = np.dot(Tt, alpha_hat[i]) + \
-                               np.dot(np.dot(Rt, Q), np.dot(Rt.T, self.r[i]))
+                               np.dot(np.dot(Rt, Qt), np.dot(Rt.T, self.r[i]))
 
         self.alpha_hat = alpha_hat
         return self
@@ -95,34 +96,35 @@ class DurbinKoopmanSmoother(Smoother):
             p(w)~N(0, diag{H1, ..., Hn, Q1, ..., Qn})
         '''
         m, k, t = self.m, self.k, self.t
-        wplus = np.zeros(((m+k)*t, 1))
+        if s > k:
+            raise ValueError('s should not be greater than k')
+        if s is None:
+            s = k
+        wplus = np.zeros(((m+s)*t, 1))
         mean = 0
         for i in range(t):
             Ht = H[i*m:(i+1)*m, :]
-            Qt = Q[:s, :s][i*k:(i+1)*k, :]
-            wplus[i*(m+k):i*(m+k)+m, :] = mean + \
+            Qt = Q[i*k:(i+1)*k, :][:s,:s]
+            wplus[i*(m+s):i*(m+s)+m, :] = mean + \
                                           np.dot(cholesky(Ht).T, randn(m, 1))
-            wplus[i*(m+k)+m:i*(m+k)+(m+k), :] = mean + \
-                                                np.dot(cholesky(Qt).T, randn(k, 1))
+            wplus[i*(m+s)+m:i*(m+s)+(m+s), :] = mean + \
+                                                np.dot(cholesky(Qt).T, randn(s, 1))
         return wplus
 
     def state_space_recursion(self, wplus, Z, T=None, R=None):
         m, k, t = self.m, self.k, self.t
-        if T is None:
-            Tt = np.eye(k)
-        if R is None:
-            Rt = np.eye(k)
-
         mk = m + k
         state = np.zeros((k, t + 1))  # assume state0 ~ N(0,P1)
         y_plus = np.zeros((m, t))
         for i in range(t):
 
+            Tt = T[i*k:(i + 1)*k, :]  # kxk
+            Rt = R[i*k:(i + 1)*k, :]  # kxk
             et = wplus[i * mk:i*mk+m, :]
             nt = wplus[i * mk+m:i*mk+mk, :]
             Zt = Z[i*m:(i+1)*m, :]
-            y_plus[:, i] = (np.dot(Zt, state[:, i]) + et).T  # mx1.T = 1xm
-            state[:, i + 1] = (np.dot(Tt, state[:, i]) + np.dot(Rt, nt)).T  # kx1.T = 1xk
+            y_plus[:, i:i+1] = (np.dot(Zt, state[:, i]) + et).T  # mx1.T = 1xm
+            state[:, i:i+1] = (np.dot(Tt, state[:, i]) + np.dot(Rt, nt)).T  # kx1.T = 1xk
 
         self.y_plus, self.state_plus = y_plus, state
         return self
@@ -156,6 +158,11 @@ class DurbinKoopmanSmoother(Smoother):
             self.state0 = np.zeros((self.k, 1))
         if self.state0_var is None:
             self.state0_var = np.zeros((self.k, self.k))
+
+        if T is None:
+            T = np.tile(np.eye(self._k), (self._t, 1)) #(kxt)xk_
+        if R is None:
+            R = np.tile(np.eye(self._k), (self._t, 1)) #(kxt)xk_
 
         self.w_hat, self.state_hat = \
             self.simulation_smoothing(y, Z=Z, H=H, Q=Q, T=T, R=R, s=s)

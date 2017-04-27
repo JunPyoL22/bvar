@@ -431,7 +431,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             state0_var = self._get_initial_value_of_state(state1, var_lag)
             if self.smoother_option is 'DurbinKoopman':
                 state = DurbinKoopmanSmoother(state0, state0_var).smoothing(Y[lag:, :], Z=Z, T=T,
-                                                                            R=R, H=H, Q=Q, s=n).state_tilda[:, :n]
+                                                                            R=R, H=H, Q=Q).state_tilda[:, :n]
     def _get_W(self, w, m):
         W = np.empty((2*m, m))
         w_1 = np.zeros((1, m))
