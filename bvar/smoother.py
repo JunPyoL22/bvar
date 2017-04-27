@@ -96,10 +96,10 @@ class DurbinKoopmanSmoother(Smoother):
             p(w)~N(0, diag{H1, ..., Hn, Q1, ..., Qn})
         '''
         m, k, t = self.m, self.k, self.t
-        if s > k:
-            raise ValueError('s should not be greater than k')
         if s is None:
             s = k
+        if s > k:
+            raise ValueError('s should not be greater than k')
         wplus = np.zeros(((m+s)*t, 1))
         mean = 0
         for i in range(t):
@@ -120,11 +120,11 @@ class DurbinKoopmanSmoother(Smoother):
 
             Tt = T[i*k:(i + 1)*k, :]  # kxk
             Rt = R[i*k:(i + 1)*k, :]  # kxk
-            et = wplus[i * mk:i*mk+m, :]
-            nt = wplus[i * mk+m:i*mk+mk, :]
+            et = wplus[i*mk:i*mk+m, :]
+            nt = wplus[i*mk+m:i*mk+mk, :]
             Zt = Z[i*m:(i+1)*m, :]
-            y_plus[:, i:i+1] = (np.dot(Zt, state[:, i]) + et).T  # mx1.T = 1xm
-            state[:, i:i+1] = (np.dot(Tt, state[:, i]) + np.dot(Rt, nt)).T  # kx1.T = 1xk
+            y_plus[:, i:i+1] = (np.dot(Zt, state[:, i:i+1]) + et)  # mx1.T = 1xm
+            state[:, i:i+1] = (np.dot(Tt, state[:, i:i+1]) + np.dot(Rt, nt))  # kx1.T = 1xk
 
         self.y_plus, self.state_plus = y_plus, state
         return self

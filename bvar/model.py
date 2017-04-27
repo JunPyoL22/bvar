@@ -47,16 +47,16 @@ class BayesianLinearRegression(BayesianModel, Sampler):
 
     def estimate(self, Y, X, sigma=None):
 
-        self.set_prior(Y, X)
+        self._set_prior(Y, X)
         if self.n_save >= 1:
             self.coef = np.empty((self.n_save, self.k))
             self.sigma = np.empty((self.n_save, self.m, self.m))
             self.reshaped_coef = np.empty((self.n_save, self.k, self.m))
 
-        self.gibbs_sampling(Y, X, sigma)
+        self._gibbs_sampling(Y, X, sigma)
         return self
 
-    def set_prior(self, Y, X):
+    def _set_prior(self, Y, X):
 
         self.m, self.k = Y.shape[1], X.shape[1]
 
@@ -89,21 +89,21 @@ class BayesianLinearRegression(BayesianModel, Sampler):
                                            prior_type=self.prior_type)
             return self
 
-    def get_posterior_distribution(self, *, coef_ols=None, sigma=None, sse_ols=None):
+    def _get_posterior_distribution(self, *, coef_ols=None, sigma=None, sse_ols=None):
         self.posterior = self.prior.get_posterior_distribution(coef_ols=coef_ols,
                                                                sigma=sigma,
                                                                sse_ols=sse_ols)
         return self
 
-    def get_conditional_posterior_distribution(self, *, coef_ols=None, drawed_value=None,
-                                               dist_type=None):
+    def _get_conditional_posterior_distribution(self, *, coef_ols=None, drawed_value=None,
+                                                dist_type=None):
         self.posterior = \
             self.prior.get_conditional_posterior_distribution(coef_ols=coef_ols,
                                                               drawed_value=drawed_value,
                                                               dist_type=dist_type)
         return self
 
-    def gibbs_sampling(self, Y, X, sigma0):
+    def _gibbs_sampling(self, Y, X, sigma0):
         ols = self.fit(Y, X, method='ls')
         if sigma0 is None and self.prior_type is 'Informative':
             raise ValueError('When prior_type is Informative, sigma must be assigned')
@@ -113,31 +113,20 @@ class BayesianLinearRegression(BayesianModel, Sampler):
 
         for i in range(self.n_iter):
             if self.prior_option_key is 'Conjugate':
-                coef, sigma = self.sampling_from_posterior(coef_ols=ols.coef,
+                coef, sigma = self._sampling_from_posterior(coef_ols=ols.coef,
                                                            sigma=sigma,
                                                            sse_ols=ols.sse)
             elif self.prior_option_key is 'NonConjugate':
-                coef, sigma = self.sampling_from_conditional_posterior(coef_ols=ols.coef,
+                coef, sigma = self._sampling_from_conditional_posterior(coef_ols=ols.coef,
                                                                        sigma=sigma)
             self._save(coef, sigma, i)
         return self
 
-    def _save(self, coef, sigma, i):
-        reshaped_coef = np.reshape(coef, (self.k, self.m), order='F')
-        if i >= self.n_save:
-            self.coef[i-self.n_save:i-self.n_save+1, :] = coef[:, 0:1].T
-            self.sigma[i-self.n_save:i-self.n_save+1, :, :] = sigma
-            self.reshaped_coef[i-self.n_save:i-self.n_save+1, :, :] = reshaped_coef
 
-        if self.n_save == 1:
-            self.coef = coef[:, 0:1]
-            self.sigma = sigma
-            self.reshaped_coef = reshaped_coef
-
-    def sampling_from_posterior(self, *, coef_ols=None, sigma=None, sse_ols=None):
-        self.get_posterior_distribution(coef_ols=coef_ols,
-                                        sigma=sigma,
-                                        sse_ols=sse_ols)
+    def _sampling_from_posterior(self, *, coef_ols=None, sigma=None, sse_ols=None):
+        self._get_posterior_distribution(coef_ols=coef_ols,
+                                         sigma=sigma,
+                                         sse_ols=sse_ols)
         mean, variance = self.posterior.normal_parameters.mean, \
                          self.posterior.normal_parameters.variance
         scale, dof = self.posterior.wishart_parameters.scale, \
@@ -154,9 +143,9 @@ class BayesianLinearRegression(BayesianModel, Sampler):
             sigma_drawed = self.sampling_from_inverseGamma(scale, dof)
         return coef_drawed, sigma_drawed
 
-    def sampling_from_conditional_posterior(self, *, coef_ols=None, sigma=None):
+    def _sampling_from_conditional_posterior(self, *, coef_ols=None, sigma=None):
 
-        self.get_conditional_posterior_distribution(coef_ols=coef_ols,
+        self._get_conditional_posterior_distribution(coef_ols=coef_ols,
                                                     drawed_value=sigma,
                                                     dist_type='Normal')
         mean, variance = self.posterior.normal_parameters.mean, \
@@ -164,7 +153,7 @@ class BayesianLinearRegression(BayesianModel, Sampler):
 
         coef_drawed = self.sampling_from_normal(mean, variance)
 
-        self.get_conditional_posterior_distribution(drawed_value=coef_drawed,
+        self._get_conditional_posterior_distribution(drawed_value=coef_drawed,
                                                     dist_type='Wishart')
         scale, dof = self.posterior.wishart_parameters.scale, \
                      self.posterior.wishart_parameters.dof
@@ -178,8 +167,20 @@ class BayesianLinearRegression(BayesianModel, Sampler):
             sigma_drawed = self.sampling_from_inverseGamma(scale, dof)
         return coef_drawed, sigma_drawed
         
-class NaturalConjugatePrior(BasePrior):
+    def _save(self, coef, sigma, i):
+        reshaped_coef = np.reshape(coef, (self.k, self.m), order='F')
+        if i >= self.n_save:
+            self.coef[i-self.n_save:i-self.n_save+1, :] = coef[:, 0:1].T
+            self.sigma[i-self.n_save:i-self.n_save+1, :, :] = sigma
+            self.reshaped_coef[i-self.n_save:i-self.n_save+1, :, :] = reshaped_coef
 
+        if self.n_save == 1:
+            self.coef = coef[:, 0:1]
+            self.sigma = sigma
+            self.reshaped_coef = reshaped_coef
+
+class NaturalConjugatePrior(BasePrior):
+    
     def __init__(self, Y, X, alpha0, V0, v0, S0, prior_type='Informative'):
         '''
         Natural Conjugate Prior
@@ -361,7 +362,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             self._Psi = np.empty((m, self.n_factor))
             self._F = np.empty((m, m*lag)) #(mxm)x!
             self._e = np.empty((t-lag, m))
-            
+
             for ind in range(m):
                 y_i = Y[:, ind: ind + 1]
                 z_i = z[:, ind: ind + 1]
@@ -430,8 +431,8 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             state0, \
             state0_var = self._get_initial_value_of_state(state1, var_lag)
             if self.smoother_option is 'DurbinKoopman':
-                state = DurbinKoopmanSmoother(state0, state0_var).smoothing(Y[lag:, :], Z=Z, T=T,
-                                                                            R=R, H=H, Q=Q).state_tilda[:, :n]
+                self.state = DurbinKoopmanSmoother(state0, state0_var).smoothing(Y[lag:, :], Z=Z, T=T,
+                                                                                 R=R, H=H, Q=Q).state_tilda[:, :n]
     def _get_W(self, w, m):
         W = np.empty((2*m, m))
         w_1 = np.zeros((1, m))
