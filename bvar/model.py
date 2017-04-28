@@ -3,7 +3,7 @@ from numpy.linalg import inv
 from base import BaseLinearRegression, BayesianModel, BasePrior, SetupForVAR
 from sampling import Sampler
 from utils import standardize, cholx, vec, DotDict
-from smoother import DurbinKoopmanSmoother
+from smoother import DurbinKoopmanSmoother, CarterKohn
 
 class BayesianLinearRegression(BayesianModel, Sampler):
 
@@ -433,6 +433,9 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             if self.smoother_option is 'DurbinKoopman':
                 self.state = DurbinKoopmanSmoother(state0, state0_var).smoothing(Y[lag:, :], Z=Z, T=T,
                                                                                  R=R, H=H, Q=Q).state_tilda[:, :n]
+            if self.smoother_option is 'CarterKohn':
+                self.state = CarterKohn(state0, state0_var).estimate(Y[lag:, :], Z=Z, T=T,
+                                                                   R=R, H=H, Q=Q, s=n).drawed_state
     def _get_W(self, w, m):
         W = np.empty((2*m, m))
         w_1 = np.zeros((1, m))

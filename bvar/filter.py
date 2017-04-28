@@ -125,10 +125,9 @@ class KalmanFilter(Filter):
             state = np.zeros((t + 1, k, 1))
             state[0] = self.state0
 
-        if self.state0_var is None:
-            state_var = np.zeros((k, k))
-        else:
-            state_var = self.state0_var
+        state_var = np.zeros((t + 1, k, k))
+        if self.state0_var is not None:
+            state_var[0, :k, :k] = self.state0_var
 
         K = np.zeros((t, k, m))
         F = np.zeros((t, m ,m))
@@ -151,11 +150,11 @@ class KalmanFilter(Filter):
             Qt = Q[i*k:(i + 1)*k, :]
 
             vt[i] = yt - np.dot(Zt, alpha_t[i])  # mx1
-            Ft[i, :, :] = np.dot(np.dot(Zt, Pt), Zt.T) + Ht  # mxm
-            Kt[i, :, :] = np.dot(np.dot(Tt, Pt), np.dot(Zt.T, inv(Ft[i])))  # kxm
+            Ft[i, :, :] = np.dot(np.dot(Zt, Pt[i]), Zt.T) + Ht  # mxm
+            Kt[i, :, :] = np.dot(np.dot(Tt, Pt[i]), np.dot(Zt.T, inv(Ft[i])))  # kxm
             Lt[i, :, :] = Tt - np.dot(Kt[i], Zt)  # kxk
             alpha_t[i + 1] = np.dot(Tt, alpha_t[i]) + np.dot(Kt[i], vt[i])  # kx1
-            Pt = np.dot(np.dot(Tt, Pt), Lt[i].T) + np.dot(np.dot(Rt, Qt), Rt.T)  # kxk
+            Pt[i+1, :, :] = np.dot(np.dot(Tt, Pt[i]), Lt[i].T) + np.dot(np.dot(Rt, Qt), Rt.T)  # kxk
             loglik = loglik + np.log10(det(Ft[i])) + np.dot(np.dot(vt[i].T,
                                                                    inv(Ft[i])), vt[i])
         self.K = Kt

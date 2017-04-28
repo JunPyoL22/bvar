@@ -198,7 +198,7 @@ class CarterKohn(object):
         state = self._kalmanfilter.state
         state_var = self._kalmanfilter.state_var
 
-        t, k = state.shape
+        t, k, _ = state.shape
         if t < k:
             state = state.T
             t, k = state.shape
@@ -209,20 +209,21 @@ class CarterKohn(object):
 
         drawed_state = np.zeros((t, k))
         wa = randn(t, k)
-        f = T[:s, :] #sxk
-        q = Q[:s, :s]
-        mu = MU[:, :s]
+        # f = T[:s, :] #sxk
+        # q = Q[:s, :s]
+        # mu = MU[:, :s]
         p00 = np.squeeze(state_var[t-1, :s, :s])
-        drawed_state[t-1, :s] = state[t-1, :s] + np.dot(wa[t-1, :s], cholx(p00))
+        drawed_state[t-1:t, :s] = state[t-1:t, :s, :] + np.dot(wa[t-1:t, :s], cholx(p00))
 
         for i in range(t-2, 0, -1):
-
+            Ft = T[(i-(t-2))*k:(i-(t-2)+1)*k,:][:s,:]
+            Qt = Q[:s, :s]
             pt = np.squeeze(state_var[i, :, :]) # kxk
-            temp = np.dot(np.dot(pt, f.T), inv(np.dot(np.dot(f, pt), f.T))+q)
+            temp = np.dot(np.dot(pt, Ft.T), inv(np.dot(np.dot(Ft, pt), Ft.T))+Qt)
             mean = state[i, :] + np.dot(temp, (drawed_state[i+1, :s] - \
-                                               mu - np.dot(state[i, :], f.T)).T).T
-            variance = pt - np.dot(temp, np.dot(f, pt))
-            drawed_state[i, :s] = mean[:, :s] + np.dot(wa[i, :s], cholx(variance[:s, :s]))
+                                               mu - np.dot(state[i, :], Ft.T)).T).T
+            variance = pt - np.dot(temp, np.dot(Ft, pt))
+            drawed_state[i, :s] = mean[:, :s] + np.dot(wa[i:i+1, :s], cholx(variance[:s, :s]))
 
         self.drawed_state = drawed_state[:, :s]
         return self
