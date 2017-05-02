@@ -223,7 +223,7 @@ class NaturalConjugatePrior(BasePrior):
 
     def _get_wishart_posterior_parameters(self, alpha_ols, sse):
         '''
-        :param alpha_ols: ndarray 
+        :param alpha_ols: ndarray
         :param sse:
         :return: scale: array, Scale matrix of posterior Wishart distribution
                  v: int, degree of freedom of posterior wishart distribution
@@ -268,9 +268,9 @@ class NonConjugatePrior(NaturalConjugatePrior):
         '''
         conditional posterior distribution
         :param coef_ols: ndarray, estimated coefi by ols
-        :param drawed_value: ndarray, drawed_value is drawed array from conditional Normal posterior distribution 
-                             or drawed array from conditional Wishart posterior distribution 
-        :param dist_type: str, distribution type, "Normal", "Wishart"  
+        :param drawed_value: ndarray, drawed_value is drawed array from conditional Normal posterior distribution
+                             or drawed array from conditional Wishart posterior distribution
+        :param dist_type: str, distribution type, "Normal", "Wishart"
         '''
         if dist_type is 'Normal':
             self.normal_parameters = self._get_normal_posterior_parameters(coef_ols, drawed_value)
@@ -280,7 +280,7 @@ class NonConjugatePrior(NaturalConjugatePrior):
 
     def _get_normal_posterior_parameters(self, alpha_ols, sigma):
         '''
-        :param alpha_ols: ndarray, ols value of alpha 
+        :param alpha_ols: ndarray, ols value of alpha
         :param sigma: ndarray, drawed sigma from Wishart or Gamma distribution
         :return: Dotdic, mean and variance of normal posterior
         '''
@@ -296,8 +296,8 @@ class NonConjugatePrior(NaturalConjugatePrior):
 
     def _get_wishart_posterior_parameters(self, alpha):
         '''
-        :param alpha: ndarray, drawed array from conditional Normal posterior distribution 
-        :return: 
+        :param alpha: ndarray, drawed array from conditional Normal posterior distribution
+        :return:
          - scale: ndarray, scale array of wishart distribution
          - dof: int, degree of freedom of wishart distribution
         '''
@@ -379,7 +379,9 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                                                     V0=np.zeros(x.shape[1]), V0_scale=1,
                                                     v0=0, S0=0).estimate(y_i[lag:, :], x, sigma0)
 
-                coef_i, reshaped_coef_i, sigma_i = me_model.coef, me_model.reshaped_coef, me_model.sigma
+                coef_i, reshaped_coef_i, sigma_i = me_model.coef, \
+                                                   me_model.reshaped_coef, \
+                                                   me_model.sigma
                 self._hold_drawed_factor_loadings(coef_i, ind, m)
                 r[ind:ind+1, :] = sigma_i
                 self._e[:, ind:ind+1] = y_i[lag:, :] - np.dot(x, reshaped_coef_i)
@@ -415,7 +417,8 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                                                 alpha0=alpha0, V0=V0, V0_scale=1,v0=0, S0=0).estimate(state_var_Y, state_var_X, sigma)
 
             coef, reshaped_coef, sigma = te_model.coef, te_model.reshaped_coef, te_model.sigma
-            self._u = state_var_Y[:, :n] - np.dot(state_var_X, reshaped_coef)[:,:n]
+            self._u = state_var_Y[:, :n] - \
+                      np.dot(state_var_X, reshaped_coef)[:, :n]
 
             # Z_2 = np.empty((0, self._Gamma.shape[1]+lag))
             # for i in range(m):
@@ -431,11 +434,15 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             state0, \
             state0_var = self._get_initial_value_of_state(state1, var_lag)
             if self.smoother_option is 'DurbinKoopman':
-                self.state = DurbinKoopmanSmoother(state0, state0_var).smoothing(Y[lag:, :], Z=Z, T=T,
-                                                                                 R=R, H=H, Q=Q).state_tilda[:, :n]
+                factors = DurbinKoopmanSmoother(state0, state0_var).smoothing(Y[lag:, :],
+                                                                              Z=Z, T=T,
+                                                                              R=R, H=H,
+                                                                              Q=Q).state_tilda[:, :n]
             if self.smoother_option is 'CarterKohn':
-                self.state = CarterKohn(state0, state0_var).estimate(Y[lag:, :], Z=Z, T=T,
-                                                                   R=R, H=H, Q=Q, s=n).drawed_state
+                factors = CarterKohn(state0, state0_var).estimate(Y[lag:, :],
+                                                                  Z=Z, T=T,
+                                                                  R=R, H=H,
+                                                                  Q=Q, s=n).drawed_state
     def _get_W(self, w, m):
         W = np.empty((2*m, m))
         w_1 = np.zeros((1, m))
@@ -482,7 +489,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
     def _get_state_space_model_parameters(self, coef, reshaped_coef, sigma,
                                           r, lag, var_lag, t):
         '''
-        This function returns parameters on 
+        This function returns parameters on
         state space model with Non-timevaring parameters and Non-stochastic volatilty
         i.e Z, T, H, Q are constant all the time or not varying depends on time
         '''

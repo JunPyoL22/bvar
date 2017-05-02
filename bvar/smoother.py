@@ -195,35 +195,31 @@ class CarterKohn(object):
             - generates drawed_state: sampling state matrix from normal
         '''
         self._kalmanfilter.filtering(y, Z=Z, H=H, Q=Q, T=T, R=R)
-        state = self._kalmanfilter.state
-        state_var = self._kalmanfilter.state_var
+        state = self._kalmanfilter.state #txkx1
+        state_var = self._kalmanfilter.state_var #kxk
 
         t, k, _ = state.shape
-        if t < k:
-            state = state.T
-            t, k = state.shape
         if s is None:
             s = k
         if MU is None:
-            MU = np.zeros((1, k))
+            MU = np.zeros((k, 1))
 
-        drawed_state = np.zeros((t, k))
-        wa = randn(t, k)
-        # f = T[:s, :] #sxk
-        # q = Q[:s, :s]
-        # mu = MU[:, :s]
+        drawed_state = np.zeros((t, k, 1))
+        wa = randn(k, t)
         p00 = np.squeeze(state_var[t-1, :s, :s])
-        drawed_state[t-1:t, :s] = state[t-1:t, :s, :] + np.dot(wa[t-1:t, :s], cholx(p00))
+        # drawed_state[t-1, :s, :] = state[t-1, :s, :] + np.dot(wa[t-1:t, :s], cholx(p00))
+        drawed_state[t-1, :s, :] = state[t-1, :s, :] + np.dot(cholx(p00).T, wa[:s, t-1:t])
 
-        for i in range(t-2, 0, -1):
-            Ft = T[(i-(t-2))*k:(i-(t-2)+1)*k,:][:s,:]
+        for i in range(t-2, -1, -1):
+            Ft = T[((t-2)-i)*k:((t-2)-i+1)*k, :][:s, :]
             Qt = Q[:s, :s]
+            mu = MU[:s, :]
             pt = np.squeeze(state_var[i, :, :]) # kxk
             temp = np.dot(np.dot(pt, Ft.T), inv(np.dot(np.dot(Ft, pt), Ft.T))+Qt)
-            mean = state[i, :] + np.dot(temp, (drawed_state[i+1, :s] - \
-                                               mu - np.dot(state[i, :], Ft.T)).T).T
+            mean = state[i] + \
+                   np.dot(temp, (drawed_state[i+1, :s]-mu-np.dot(Ft, state[i, :])))
             variance = pt - np.dot(temp, np.dot(Ft, pt))
-            drawed_state[i, :s] = mean[:, :s] + np.dot(wa[i:i+1, :s], cholx(variance[:s, :s]))
+            drawed_state[i, :s] = mean[:s, :] + np.dot(cholx(variance[:s, :s]).T, wa[:s, t-1:t])
 
-        self.drawed_state = drawed_state[:, :s]
+        self.drawed_state = drawed_state[:, :s, 0]
         return self

@@ -3,14 +3,15 @@ import pandas as pd
 import os
 import sys
 
-MAC = True
 if sys.platform == 'win32':
-    WIN = True
+    SYS = 'WIN'
+else:
+    SYS = 'MAC'
 
-if MAC:
-    DATA_PATH = '/Users/junpyolee/Google Drive/data'
-    MODULE_PATH = '/Users/junpyolee/projects/bvar/bvar'
-if WIN:
+if SYS is 'MAC':
+    DATA_PATH = '/Users/Junpyo/Google Drive/data'
+    MODULE_PATH = '/Users/Junpyo/project/bvar/bvar'
+if SYS is 'WIN':
     DATA_PATH = 'D:\\Google Drive\\data'
     MODULE_PATH = 'C:\\project\\bvar\\bvar'
 
@@ -35,5 +36,5 @@ w = np.array(W)
 
 os.chdir(MODULE_PATH)
 from model import FactorAugumentedVARX
-favarx = FactorAugumentedVARX(n_iter=100, n_save=50, lag=1, var_lag=1, n_factor=3, 
+favarx = FactorAugumentedVARX(n_iter=100, n_save=50, lag=1, var_lag=1, n_factor=3,
                               smoother_option='CarterKohn', is_standardize=False).estimate(data, z, w)
