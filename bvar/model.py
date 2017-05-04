@@ -1,5 +1,5 @@
 import numpy as np
-from numpy.linalg import inv
+from numpy.linalg import inv, matrix_power
 from base import BaseLinearRegression, BayesianModel, BasePrior, SetupForVAR
 from sampling import Sampler
 from utils import standardize, cholx, vec, DotDict
@@ -316,13 +316,14 @@ class NonConjugatePrior(NaturalConjugatePrior):
 class FactorAugumentedVARX(BayesianLinearRegression):
 
     def __init__(self, n_iter=100, n_save=50, lag=1, var_lag=1, n_factor=3,
-                 smoother_option='DurbinKoopman', is_standardize=True):
+                 horizon=0, smoother_option='DurbinKoopman', is_standardize=True):
 
         self.n_iter = n_iter
         self.n_save = n_save
         self.lag = lag
         self.var_lag = var_lag
         self.n_factor = n_factor
+        self.horizon = horizon
         self.smoother_option = smoother_option
         self.is_standardize = is_standardize
 
@@ -373,7 +374,8 @@ class FactorAugumentedVARX(BayesianLinearRegression):
 
                 sigma0 = r[ind]
 
-                me_model = BayesianLinearRegression(n_iter=1, n_save=1, lag=0, y_type='univariate',
+                me_model = BayesianLinearRegression(n_iter=1, n_save=1, lag=0,
+                                                    y_type='univariate',
                                                     prior_option={'NonConjugate':'Indep_NormalWishart-NonInformative'},
                                                     alpha0=np.zeros((x.shape[1], 1)),
                                                     V0=np.zeros(x.shape[1]), V0_scale=1,
@@ -412,9 +414,13 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             alpha0 = np.zeros((state_var_Y.shape[1]*state_var_X.shape[1], 1))
             V0 = np.zeros((state_var_Y.shape[1]*state_var_X.shape[1],
                            state_var_Y.shape[1]*state_var_X.shape[1]))
-            te_model = BayesianLinearRegression(n_iter=1, n_save=1, lag=0, y_type='multivariate',
+            te_model = BayesianLinearRegression(n_iter=1, n_save=1, lag=0,
+                                                y_type='multivariate',
                                                 prior_option={'NonConjugate':'Indep_NormalWishart-NonInformative'},
-                                                alpha0=alpha0, V0=V0, V0_scale=1,v0=0, S0=0).estimate(state_var_Y, state_var_X, sigma)
+                                                alpha0=alpha0, V0=V0, V0_scale=1,
+                                                v0=0, S0=0).estimate(state_var_Y,
+                                                                     state_var_X,
+                                                                     sigma)
 
             coef, reshaped_coef, sigma = te_model.coef, te_model.reshaped_coef, te_model.sigma
             self._u = state_var_Y[:, :n] - \
@@ -434,15 +440,46 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             state0, \
             state0_var = self._get_initial_value_of_state(state1, var_lag)
             if self.smoother_option is 'DurbinKoopman':
-                factors = DurbinKoopmanSmoother(state0, state0_var).smoothing(Y[lag:, :],
-                                                                              Z=Z, T=T,
-                                                                              R=R, H=H,
-                                                                              Q=Q).state_tilda[:, :n]
+                factors = DurbinKoopmanSmoother(state0,
+                                                state0_var).smoothing(Y[lag:, :],
+                                                                      Z=Z, T=T,
+                                                                      R=R, H=H,
+                                                                      Q=Q).state_tilda[:, :n]
             if self.smoother_option is 'CarterKohn':
                 factors = CarterKohn(state0, state0_var).estimate(Y[lag:, :],
                                                                   Z=Z, T=T,
                                                                   R=R, H=H,
                                                                   Q=Q, s=n).drawed_state
+            if i >= self.n_save:
+                self.ir = dict()
+                for horizon in range(self.horizon):
+                    self.ir[horizon] = _get_impulse_response(horizon, T)
+
+    def _get_impulse_response(horizon, T):
+        m, k = self.Gamma.shape
+        lag = max(self.var_lag, self.lag)
+        coef_a = np.zeros((m+k, lag*(m+k)))
+        for i in range(lag):
+            if self.lag <= self.var_lag:
+                if self.lag < self.var_lag:
+                    F = np.zeros((m, m))
+                else:
+                    F = self._F[:, i*m:(i+1)*m]
+                a = np.r_[np.c_[F, np.dot(self.Gamma, T)],
+                          np.c_[np.zeros((k, m)), T]]
+            else:
+                a = np.r_[np.c_[self._F[:, i*m:(i+1)*m], np.zeros((m, k))],
+                          np.c_[np.zeros((k, m)), np.zeros((k, k))]]
+            coef_a[:, i*(m+k):(i+1)*(m+k)] = a
+        coef_a = np.r_[coef_a,
+                       np.c_[np.eye((lag-1)*(m+k)), np.zeros(((lag-1)*(m+k), m+k))]]
+        coef_b = np.r_[np.c_[np.eye(m), self.Gamma],
+                       np.c_[np.zeros((k, m)), np.eye(k)]]
+        if lag > 1:
+            coef_b = np.r_[coef_b, np.zeros(((lag-1)*(m+k), m+k))]
+        vma_coef = np.dot(matrix_power(coef_a, horizon), coef_b)
+        return vma_coef[:m, :m]
+
     def _get_W(self, w, m):
         W = np.empty((2*m, m))
         w_1 = np.zeros((1, m))
@@ -547,3 +584,33 @@ class FactorAugumentedVARX(BayesianLinearRegression):
         coef_drawed, sigma_drawed = self.sampling_from_conditional_posterior(coef_ols=coef_ols,
                                                                              sigma=sigma)
         return coef_drawed, sigma_drawed
+
+class GFEVarianceDecompose(object):
+    def __init__(self, horizon, coef, sigma, i, j):
+        self.horizon = horizon
+        self.coef = coef
+        self.sigma = sigma
+        self.g = np.empty((horizon, i, j))
+
+    def compute(self, i, j):
+        for ni in range(i):
+            denominator = self._compute_denominator(ni)
+            for nj in range(j):
+                nominator = self._compute_nominator(ni, nj)
+            self.g[self.horizon, ni, nj] = nominator/denominator
+
+    def _compute_nominator(self, i, j):
+        nomi = np.empty((1, h))
+        for h in range(self.horizon-1):
+            nomi[:, h] = np.square(np.dot(self.coef[i, :],
+                                          self.sigma[j, j]))
+        return (1/self.sigma[j, j])*np.sum(nomi, axis=1)
+
+    def _compute_denominator(self, i):
+        denomi = self.empty((1, h))
+        for h in range(self.horizon-1):
+            denomi[:, h] = np.dot(np.dot(self.coef[i, :],
+                                         self.sigma[i, i]),
+                                  self.coef[i, :].T)
+        return np.sum(denomi, axis=1)
+        
