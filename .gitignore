@@ -2,12 +2,14 @@
 
 *.pyc
 *.ipynb
+*.DS_Store
 .vscode/
 .ipynb_checkpoints/
 **/__pycache__
 **/vscode
 **/.ipynb_checkpoints
 **/.idea
+*.jl
 
 # example of gitignore
 # a comment - 이 줄은 무시한다.

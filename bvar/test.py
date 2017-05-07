@@ -36,5 +36,7 @@ w = np.array(W)
 
 os.chdir(MODULE_PATH)
 from model import FactorAugumentedVARX
-favarx = FactorAugumentedVARX(n_iter=100, n_save=50, lag=1, var_lag=1, n_factor=3,
-                              smoother_option='CarterKohn', is_standardize=False).estimate(data, z, w)
+favarx = FactorAugumentedVARX(n_iter=100, n_save=50, lag=1, 
+                              var_lag=1, n_factor=3, horizon=10,
+                              smoother_option='CarterKohn', 
+                              is_standardize=False).estimate(data, z, w)

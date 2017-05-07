@@ -172,7 +172,7 @@ class DurbinKoopmanSmoother(Smoother):
         self.w_hat_plus, self.state_hat_plus = \
             self.simulation_smoothing(self.y_plus, Z=Z, H=H, Q=Q, T=T, R=R, s=s)
 
-        self.state_tilda = self.state_hat + self.state_plus - self.state_hat_plus
+        self.drawed_state = self.state_hat + self.state_plus - self.state_hat_plus
         return self
 
 class CarterKohn(object):
@@ -180,7 +180,7 @@ class CarterKohn(object):
     def __init__(self, state0, state0_var):
         self._kalmanfilter = KalmanFilter(state0=state0, state0_var=state0_var)
 
-    def estimate(self, y, *, Z=None, H=None, Q=None, T=None, R=None,
+    def smoothing(self, y, *, Z=None, H=None, Q=None, T=None, R=None,
                  MU=None, s=None):
         '''
             Observation Eq: Y(t) = Z*state(t) + A*z(t) + e(t), var(e(t)) = H
@@ -197,8 +197,8 @@ class CarterKohn(object):
         self._kalmanfilter.filtering(y, Z=Z, H=H, Q=Q, T=T, R=R)
         state = self._kalmanfilter.state #txkx1
         state_var = self._kalmanfilter.state_var #kxk
-
-        t, k, _ = state.shape
+        t = y.shape[0]
+        k = state.shape[1]
         if s is None:
             s = k
         if MU is None:

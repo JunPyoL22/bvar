@@ -3,7 +3,7 @@ from numpy.linalg import inv, det
 from scipy.sparse import spdiags
 from base import Filter
 from utils import Y_Dimension_Checker
-
+                                                                                
 class HpFilter(Filter):
 
     def __init__(self, penalty_param=None, period_type=None):
@@ -77,8 +77,8 @@ class KalmanFilter(Filter):
          - state_var: filteted variance of state by Kalmanfilter
          - loglik: loglikely value
          - Kt: Kalman Gain
-         - Lt: 
-         - Ft: variance of vt
+         - Lt:
+         - Ft: variance of vt given Yt(y1..yt)
          - vt: innovation
     '''
     def __init__(self, *, state0=None, state0_var=None):
@@ -142,6 +142,7 @@ class KalmanFilter(Filter):
         alpha_t, Pt, Kt, Ft, Lt, vt = self._get_container()
 
         for i in range(t):
+            print(i)
             yt = y[:, i:i+1]  # mx1
             Ht = H[i*m:(i + 1)*m, :]  #  mxm
             Zt = Z[i*m:(i + 1)*m, :]  #  mxk
@@ -162,6 +163,6 @@ class KalmanFilter(Filter):
         self.L = Lt
         self.v = vt
         self.loglik = -0.5 * loglik
-        self.state = alpha_t
-        self.state_var = Pt
+        self.state = alpha_t[1:]
+        self.state_var = Pt[1:]
         return self

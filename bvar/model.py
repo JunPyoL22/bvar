@@ -337,7 +337,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             z = standardize(z)
 
         if self.n_factor != 0:
-            factors, _ = self._get_principle_component(Y)
+            factors = self._get_principle_component(Y)[0][self.lag:, :]
 
         self._W = self._get_W(w, m)
         self._gibbs_sampling(Y, z, factors)
@@ -355,7 +355,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
         r = np.ones((m, 1)) # variace of
         sigma = np.eye(n+1)
 
-        for i in range(self.n_iter):
+        for nloop in range(self.n_iter):
             self._A = np.empty((m, 2))
             self._B = np.empty((m, 2*lag))
             self._G = np.empty((m, m))
@@ -402,11 +402,11 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                                self._F[:, (i-1)*m:i*m]).sum(axis=1).reshape(var_setup.t, 1)
 
             # Set STATE VAR model to update factors dynamically
-            state1 = factors[lag:, :]
-            state2 = factors[lag:, :]
+            state1 = factors
+            # state2 = factors[lag:, :]
             for i in range(1, lag+1):
                 state1 = np.append(state1, FX[i][lag-i:, :], axis=1)
-                state2 = np.append(state2, np.ones((state2.shape[0], 1)), axis=1)
+                # state2 = np.append(state2, np.ones((state2.shape[0], 1)), axis=1)
 
             var_setup = SetupForVAR(lag=var_lag, const=False).prepare(state1)
             state_var_Y = var_setup.Y
@@ -437,20 +437,18 @@ class FactorAugumentedVARX(BayesianLinearRegression):
 
             Z, H, T, Q, R = self._get_state_space_model_parameters(coef, reshaped_coef, sigma, r,
                                                                    lag, var_lag, t)
-            state0, \
-            state0_var = self._get_initial_value_of_state(state1, var_lag)
-            if self.smoother_option is 'DurbinKoopman':
-                factors = DurbinKoopmanSmoother(state0,
-                                                state0_var).smoothing(Y[lag:, :],
-                                                                      Z=Z, T=T,
-                                                                      R=R, H=H,
-                                                                      Q=Q).state_tilda[:, :n]
-            if self.smoother_option is 'CarterKohn':
-                factors = CarterKohn(state0, state0_var).estimate(Y[lag:, :],
-                                                                  Z=Z, T=T,
-                                                                  R=R, H=H,
-                                                                  Q=Q, s=n).drawed_state
-            if i >= self.n_save:
+            if nloop == 0:
+                state0, \
+                state0_var = self._get_initial_value_of_state(state1, var_lag)
+                if self.smoother_option is 'DurbinKoopman':
+                    smoother = DurbinKoopmanSmoother(state0, state0_var)
+                if self.smoother_option is 'CarterKohn':
+                    smoother = CarterKohn(state0, state0_var)
+
+            factors = smoother.smoothing(Y[lag:, :], Z=Z, T=T,
+                                         R=R, H=H, Q=Q).drawed_state[:, :n]
+
+            if nloop >= self.n_save:
                 self.ir = dict()
                 for horizon in range(self.horizon):
                     self.ir[horizon] = _get_impulse_response(horizon, T)
@@ -494,8 +492,9 @@ class FactorAugumentedVARX(BayesianLinearRegression):
         if self.lag == 0:
             regressor = np.c_[factors, z_i]
         elif self.lag > 0:
-            regressor = np.c_[factors[self.lag:, :], y_i_lag,
-                              z_i[self.lag:, :], z_i_lag]
+            regressor = np.c_[factors, y_i_lag,
+                              z_i[self.lag:, :],
+                              z_i_lag]
         return regressor
 
     def _hold_drawed_factor_loadings(self, coef, n, m):
@@ -553,37 +552,6 @@ class FactorAugumentedVARX(BayesianLinearRegression):
         return np.tile(Z, (t-lag, 1)), np.tile(H, (t-lag, 1)),\
                np.tile(T, (t-lag, 1)), np.tile(Q, (t-lag, 1)),\
                np.tile(R, (t-lag, 1))
-
-    def _sampling_parameters(self, y, x, sigma0):
-        m, k = y.shape[1], x.shape[1]
-        y_type = 'multivariate'
-        if y.shape[1] == 1:
-            y_type = 'univairate'
-        sigma_i = sigma0
-        ols = self.fit(y, x, method='ls')
-        coef, sigma = \
-            self._sampling_from_conditional_posterior(coef_ols=ols.coef,
-                                                      sigma=sigma_i,
-                                                      y_type=y_type)
-        reshaped_coef = np.reshape(coef, (k, m), order='F')
-        return coef, reshaped_coef, sigma
-
-    def _set_state(self, factors, y_i_lag, z_i, z_i_lag):
-        if self.lag == 0:
-            self.state = np.c_[factors, z_i]
-        elif self.lag > 0:
-            self.state = np.c_[factors[self.lag:, :], y_i_lag,
-                               z_i[self.lag:, :], z_i_lag]
-        return self
-
-    def _sampling_from_conditional_posterior(self, *,
-                                             coef_ols=None,
-                                             sigma=None,
-                                             y_type=None):
-        self.y_type = y_type
-        coef_drawed, sigma_drawed = self.sampling_from_conditional_posterior(coef_ols=coef_ols,
-                                                                             sigma=sigma)
-        return coef_drawed, sigma_drawed
 
 class GFEVarianceDecompose(object):
     def __init__(self, horizon, coef, sigma, i, j):

@@ -1,6 +1,7 @@
 import numpy as np
 from numpy.linalg import inv, cholesky
 from numpy.random import randn
+from utils import cholx
 
 
 def draw_inverse_gamma(T0, D0, x):
@@ -23,7 +24,6 @@ class Sampler(object):
         '''
         return: nparray, drawed array, kmx1 
         '''
-        from utils import cholx
         km = mean.shape[0]
         return mean + np.dot(cholx(variance).T, randn(km, 1))
 
@@ -32,6 +32,6 @@ class Sampler(object):
         return scale/np.dot(z0.T,z0)
 
     def sampling_from_inverseWishart(self, scale, dof):
-        arr = np.dot(cholesky(scale).T, randn(scale.shape[0], dof))
+        arr = np.dot(cholx(scale).T, randn(scale.shape[0], dof))
         return inv(np.dot(arr, arr.T))
         
