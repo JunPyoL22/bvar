@@ -451,9 +451,9 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             if nloop >= self.n_save:
                 self.ir = dict()
                 for horizon in range(self.horizon):
-                    self.ir[horizon] = _get_impulse_response(horizon, T)
+                    self.ir[horizon] = self._get_impulse_response(horizon, T)
 
-    def _get_impulse_response(horizon, T):
+    def _get_impulse_response(self, horizon, T):
         m, k = self.Gamma.shape
         lag = max(self.var_lag, self.lag)
         coef_a = np.zeros((m+k, lag*(m+k)))
