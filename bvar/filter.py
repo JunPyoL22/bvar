@@ -41,7 +41,8 @@ class HpFilter(Filter):
         if self.penalty_param is None:
             self.set_penalty_parameter_on_hp_filter()
 
-        a = np.array([self.penalty_param, -4 * self.penalty_param, ((6 * self.penalty_param + 1) / 2.)])
+        a = np.array([self.penalty_param, -4 * self.penalty_param,
+                     ((6 * self.penalty_param + 1) / 2.)])
         d = np.tile(a, (T, 1))
 
         d[0, 1] = -2. * self.penalty_param
@@ -73,12 +74,11 @@ class KalmanFilter(Filter):
         :param T: (k*t)xk ndarray, T(t) in (2) Eq for t = 1..t_max
         :param R: (k*t)xk ndarray, R(t) in (2) Eq for t = 1..t_max
         Attributes
-         - state: filteted state by Kalmanfilter
-         - state_var: filteted variance of state by Kalmanfilter
+         - state: filteted state by Kalmanfilter E(state(t)/Y(t))
+         - state_var: filteted variance of state by Kalmanfilter V(state(t)/Y(t))
          - loglik: loglikely value
          - Kt: Kalman Gain
-         - Lt:
-         - Ft: variance of vt given Yt(y1..yt)
+         - Ft_t_1: variance of vt given Yt-1(y1..yt-1)
          - vt: innovation
     '''
     def __init__(self, *, state0=None, state0_var=None):
@@ -131,18 +131,16 @@ class KalmanFilter(Filter):
 
         K = np.zeros((t, k, m))
         F = np.zeros((t, m ,m))
-        L = np.zeros((t, k, k))
         v = np.zeros((t, m, 1))
 
-        return state, state_var, K, F, L, v
+        return state, state_var, K, F, v
 
     def forward_recursion_to_estimate_state(self, y, Z, T, R, H, Q):
         m, k, t,  = self._m, self._k, self._t
         loglik = 0
-        alpha_t, Pt, Kt, Ft, Lt, vt = self._get_container()
+        alpha_tt, Ptt, Kt, Ft_t_1, vt = self._get_container()
 
         for i in range(t):
-            print(i)
             yt = y[:, i:i+1]  # mx1
             Ht = H[i*m:(i + 1)*m, :]  #  mxm
             Zt = Z[i*m:(i + 1)*m, :]  #  mxk
@@ -150,25 +148,19 @@ class KalmanFilter(Filter):
             Rt = R[i*k:(i + 1)*k, :]  # kxk
             Qt = Q[i*k:(i + 1)*k, :]
 
-            if i == 0:
-                alpha_t[i] = np.dot(Zt, alpha_t[i])
-                Pt[i, :, :] = np.dot(np.dot(Tt, Pt[i]), Tt.T) + Ht
-
-            vt[i] = yt - np.dot(Zt, alpha_t[i])  # mx1
-            Ft[i, :, :] = np.dot(np.dot(Zt, Pt[i]), Zt.T) + Ht  # mxm
-            Kt[i, :, :] = np.dot(np.dot(Tt, Pt[i]), np.dot(Zt.T, inv(Ft[i])))  # kxm
-            Ptt = Pt[i] - np.dot(Kt[i, :, :], np.dot(Zt, Pt[i]))
-            Pt[i+1, :, :] = np.dot(np.dot(Tt, Ptt), Tt.T) + np.dot(np.dot(Rt, Qt), Rt.T)
-            # Lt[i, :, :] = Tt - np.dot(Kt[i], Zt)  # kxk
-            alpha_t[i + 1] = np.dot(Tt, alpha_t[i]) + np.dot(Kt[i], vt[i])  # kx1
-            # Pt[i+1, :, :] = np.dot(np.dot(Tt, Pt[i]), Lt[i].T) + np.dot(np.dot(Rt, Qt), Rt.T)  # kxk
-            loglik = loglik + np.log10(det(Ft[i])) + np.dot(np.dot(vt[i].T,
-                                                                   inv(Ft[i])), vt[i])
+            alpha_t_t_1 = np.dot(Tt, alpha_tt[i])
+            Pt_t_1 = np.dot(np.dot(Tt, Ptt[i]), Tt.T) + Qt
+            vt[i] = yt - np.dot(Zt, alpha_t_t_1)  # mx1
+            Ft_t_1[i, :, :] = np.dot(np.dot(Zt, Pt_t_1), Zt.T) + Ht  # mxm
+            Kt[i, :, :] = np.dot(np.dot(Tt, Pt_t_1), np.dot(Zt.T, inv(Ft_t_1[i])))  # kxm
+            Ptt[i+1] = Pt_t_1 - np.dot(Kt[i, :, :], np.dot(Zt, Pt_t_1))
+            alpha_tt[i+1] = np.dot(Tt, alpha_tt[i]) + np.dot(Kt[i], vt[i])  # kx1
+            loglik = loglik + np.log10(det(Ft_t_1[i])) + \
+                                                np.dot(np.dot(vt[i].T, inv(Ft_t_1[i])), vt[i])
         self.K = Kt
-        self.F = Ft
-        self.L = Lt
+        self.F = Ft_t_1
         self.v = vt
         self.loglik = -0.5 * loglik
-        self.state = alpha_t[1:]
-        self.state_var = Pt[1:]
+        self.state = alpha_tt[1:]
+        self.state_var = Ptt[1:]
         return self
