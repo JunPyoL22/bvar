@@ -3,6 +3,7 @@ import pandas as pd
 import os
 import sys
 
+np.set_printoptions(precision=3, suppress=True)
 if sys.platform == 'win32':
     SYS = 'WIN'
 else:

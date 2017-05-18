@@ -149,10 +149,10 @@ class KalmanFilter(Filter):
             Qt = Q[i*k:(i + 1)*k, :]
 
             alpha_t_t_1 = np.dot(Tt, alpha_tt[i])
-            Pt_t_1 = np.dot(np.dot(Tt, Ptt[i]), Tt.T) + Qt
+            Pt_t_1 = np.dot(np.dot(Tt, Ptt[i]), Tt.T) + np.dot(Rt, np.dot(Qt, Rt))
             vt[i] = yt - np.dot(Zt, alpha_t_t_1)  # mx1
             Ft_t_1[i, :, :] = np.dot(np.dot(Zt, Pt_t_1), Zt.T) + Ht  # mxm
-            Kt[i, :, :] = np.dot(np.dot(Tt, Pt_t_1), np.dot(Zt.T, inv(Ft_t_1[i])))  # kxm
+            Kt[i, :, :] = np.dot(Pt_t_1, np.dot(Zt.T, inv(Ft_t_1[i])))  # kxm
             Ptt[i+1] = Pt_t_1 - np.dot(Kt[i, :, :], np.dot(Zt, Pt_t_1))
             alpha_tt[i+1] = np.dot(Tt, alpha_tt[i]) + np.dot(Kt[i], vt[i])  # kx1
             loglik = loglik + np.log10(det(Ft_t_1[i])) + \
