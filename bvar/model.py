@@ -440,13 +440,16 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             if nloop == 0:
                 state0, \
                 state0_var = self._get_initial_value_of_state(state1, var_lag)
-                if self.smoother_option is 'DurbinKoopman':
-                    smoother = DurbinKoopmanSmoother(state0, state0_var)
-                if self.smoother_option is 'CarterKohn':
-                    smoother = CarterKohn(state0, state0_var)
 
-            factors = smoother.smoothing(Y[lag:, :], Z=Z, T=T,
-                                         R=R, H=H, Q=Q).drawed_state[:, :n]
+            if self.smoother_option is 'DurbinKoopman':
+                smoother = DurbinKoopmanSmoother(state0, state0_var)
+                factors = smoother.smoothing(Y[lag:, :], Z=Z, T=T,
+                                             R=R, H=H, Q=Q).drawed_state[:, :n]
+
+            if self.smoother_option is 'CarterKohn':
+                smoother = CarterKohn(state0, state0_var)
+                factors = smoother.smoothing(Y[lag:, :], Z=Z, T=T,
+                                             R=R, H=H, Q=Q, s=n).drawed_state[:, :n]
 
             if nloop >= self.n_save:
                 self.ir = dict()
