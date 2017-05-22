@@ -2,7 +2,7 @@ import numpy as np
 from numpy.linalg import inv, matrix_power
 from base import BaseLinearRegression, BayesianModel, BasePrior, SetupForVAR
 from sampling import Sampler
-from utils import standardize, cholx, vec, DotDict
+from utils import standardize, cholx, vec, DotDict, is_coefficient_stable
 from smoother import DurbinKoopmanSmoother, CarterKohn
 
 class BayesianLinearRegression(BayesianModel, Sampler):
@@ -135,8 +135,9 @@ class BayesianLinearRegression(BayesianModel, Sampler):
         coef_drawed = self.sampling_from_normal(mean, variance)
 
         if self.stability_check:
-            '''should implement coef stability check later'''
-            pass
+            while not is_coefficient_stable(coef_drawed, self.m, self.lag):
+                coef_drawed = self.sampling_from_normal(mean, variance)
+
         if self.y_type is 'multivariate':
             sigma_drawed = self.sampling_from_inverseWishart(scale, dof)
         elif self.y_type is 'univariate':
@@ -146,21 +147,22 @@ class BayesianLinearRegression(BayesianModel, Sampler):
     def _sampling_from_conditional_posterior(self, *, coef_ols=None, sigma=None):
 
         self._get_conditional_posterior_distribution(coef_ols=coef_ols,
-                                                    drawed_value=sigma,
-                                                    dist_type='Normal')
+                                                     drawed_value=sigma,
+                                                     dist_type='Normal')
         mean, variance = self.posterior.normal_parameters.mean, \
                          self.posterior.normal_parameters.variance
 
         coef_drawed = self.sampling_from_normal(mean, variance)
 
+        if self.stability_check:
+            while not is_coefficient_stable(coef_drawed, self.m, self.lag):
+                coef_drawed = self.sampling_from_normal(mean, variance)
+
         self._get_conditional_posterior_distribution(drawed_value=coef_drawed,
-                                                    dist_type='Wishart')
+                                                     dist_type='Wishart')
         scale, dof = self.posterior.wishart_parameters.scale, \
                      self.posterior.wishart_parameters.dof
 
-        if self.stability_check:
-            '''should implement coef stability check later'''
-            pass
         if self.y_type is 'multivariate':
             sigma_drawed = self.sampling_from_inverseWishart(scale, dof)
         elif self.y_type is 'univariate':
@@ -377,6 +379,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                 me_model = BayesianLinearRegression(n_iter=1, n_save=1, lag=0,
                                                     y_type='univariate',
                                                     prior_option={'NonConjugate':'Indep_NormalWishart-NonInformative'},
+                                                    stability_check=False,
                                                     alpha0=np.zeros((x.shape[1], 1)),
                                                     V0=np.zeros(x.shape[1]), V0_scale=1,
                                                     v0=0, S0=0).estimate(y_i[lag:, :], x, sigma0)
@@ -414,9 +417,10 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             alpha0 = np.zeros((state_var_Y.shape[1]*state_var_X.shape[1], 1))
             V0 = np.zeros((state_var_Y.shape[1]*state_var_X.shape[1],
                            state_var_Y.shape[1]*state_var_X.shape[1]))
-            te_model = BayesianLinearRegression(n_iter=1, n_save=1, lag=0,
+            te_model = BayesianLinearRegression(n_iter=1, n_save=1, lag=1,
                                                 y_type='multivariate',
                                                 prior_option={'NonConjugate':'Indep_NormalWishart-NonInformative'},
+                                                stability_check=False,
                                                 alpha0=alpha0, V0=V0, V0_scale=1,
                                                 v0=0, S0=0).estimate(state_var_Y,
                                                                      state_var_X,
@@ -514,14 +518,8 @@ class FactorAugumentedVARX(BayesianLinearRegression):
         return self
 
     def _get_initial_value_of_state(self, state, lag):
-        if lag >= 2:
-            temp0 = np.empty((1, 0))
-            for i in range(lag-1, 0, -1):
-                temp0 = np.append(temp0, state[i-1:i, :], axis=1)
-            state0 = np.c_[temp0, np.zeros((1, state.shape[1]))]
-
-        elif lag == 1:
-            state0 = np.zeros((1, state.shape[1]))
+        state0 = np.zeros((1, lag*state.shape[1]))
+        state0[:1, :state.shape[1]] = state[0:1, :]
         state0_var = np.eye(state0.shape[1])
         return state0, state0_var
 

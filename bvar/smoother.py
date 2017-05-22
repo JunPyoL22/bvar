@@ -215,7 +215,7 @@ class CarterKohn(object):
             Qt = Q[:s, :s]
             mu = MU[:s, :]
             pt = np.squeeze(state_var[i, :, :]) # kxk
-            temp = np.dot(np.dot(pt, Ft.T), inv(np.dot(np.dot(Ft, pt), Ft.T))+Qt)
+            temp = np.dot(np.dot(pt, Ft.T), inv(np.dot(np.dot(Ft, pt), Ft.T)+Qt))
             mean = state[i] + \
                    np.dot(temp, (drawed_state[i+1, :s]-mu-np.dot(Ft, state[i, :])))
             variance = pt - np.dot(temp, np.dot(Ft, pt))

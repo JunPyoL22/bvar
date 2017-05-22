@@ -32,6 +32,6 @@ class Sampler(object):
         return scale/np.dot(z0.T,z0)
 
     def sampling_from_inverseWishart(self, scale, dof):
-        arr = np.dot(cholx(scale).T, randn(scale.shape[0], dof))
+        arr = np.dot(cholx(inv(scale)).T, randn(scale.shape[0], dof))
         return inv(np.dot(arr, arr.T))
         

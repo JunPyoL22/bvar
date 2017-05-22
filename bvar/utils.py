@@ -56,13 +56,18 @@ def is_coefficient_stable(coef, n, l):
         Input
          - coef: coefficients
          - n: number of endog variables(dimension of Y)
-         - l: number of lags
+         - l: number of lags 
         Output
          - if ee<1 stable(True), else, not stable(False), S=0
     '''
+    if coef.shape[0]/n == n*l:
+        reshaped_coef = coef.reshape((n*l, n))
+    else:
+        reshaped_coef = coef.reshape(n*l+1, n)
     FF = np.zeros((n * l, n * l))
     FF[n:n * l, :n * (l - 1)] = np.eye(n * (l - 1))
-    FF[:n, :n * l] = coef.reshape((n * l + 1, n))[:n * l, :n].T  # coef.reshape((n*l+1,n)): 7*3
+    # Assume last "n" elements of the coef vector represents coefficients of constant term
+    FF[:n, :n * l] = reshaped_coef[:n * l, :n].T  # coef.reshape((n*l+1,n)): 7*3
     ee = max(np.absolute(eigvals(FF)))
     return ee < 1
 
