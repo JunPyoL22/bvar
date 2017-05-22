@@ -461,7 +461,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                     self.ir[horizon] = self._get_impulse_response(horizon, T)
 
     def _get_impulse_response(self, horizon, T):
-        m, k = self.Gamma.shape
+        m, k = self._Gamma.shape
         lag = max(self.var_lag, self.lag)
         coef_a = np.zeros((m+k, lag*(m+k)))
         for i in range(lag):
@@ -478,7 +478,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             coef_a[:, i*(m+k):(i+1)*(m+k)] = a
         coef_a = np.r_[coef_a,
                        np.c_[np.eye((lag-1)*(m+k)), np.zeros(((lag-1)*(m+k), m+k))]]
-        coef_b = np.r_[np.c_[np.eye(m), self.Gamma],
+        coef_b = np.r_[np.c_[np.eye(m), self._Gamma],
                        np.c_[np.zeros((k, m)), np.eye(k)]]
         if lag > 1:
             coef_b = np.r_[coef_b, np.zeros(((lag-1)*(m+k), m+k))]
