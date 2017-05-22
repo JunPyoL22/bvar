@@ -470,7 +470,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                     F = np.zeros((m, m))
                 else:
                     F = self._F[:, i*m:(i+1)*m]
-                a = np.r_[np.c_[F, np.dot(self.Gamma, T)],
+                a = np.r_[np.c_[F, np.dot(self._Gamma, T)],
                           np.c_[np.zeros((k, m)), T]]
             else:
                 a = np.r_[np.c_[self._F[:, i*m:(i+1)*m], np.zeros((m, k))],
