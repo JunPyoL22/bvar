@@ -328,6 +328,8 @@ class FactorAugumentedVARX(BayesianLinearRegression):
         self.horizon = horizon
         self.smoother_option = smoother_option
         self.is_standardize = is_standardize
+        self.impulse_response = dict()
+        self.var_covar = dict()
 
     def estimate(self, Y, z, w):
         '''Assume Y, X has right form for VAR model to estimate
@@ -454,34 +456,11 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                                              R=R, H=H, Q=Q, s=n).drawed_state[:, :n]
 
             if nloop >= self.n_save:
-                self.ir = dict()
-                for horizon in range(self.horizon):
-                    self.ir[horizon] = self._get_impulse_response(horizon, T[:n, :n])
-
-    def _get_impulse_response(self, horizon, T):
-        m, k = self._Gamma.shape
-        lag = max(self.var_lag, self.lag)
-        coef_a = np.zeros((m+k, lag*(m+k)))
-        for i in range(lag):
-            if self.lag <= self.var_lag:
-                if self.lag < self.var_lag:
-                    F = np.zeros((m, m))
-                else:
-                    F = self._F[:, i*m:(i+1)*m]
-                a = np.r_[np.c_[F, np.dot(self._Gamma, T)],
-                          np.c_[np.zeros((k, m)), T]]
-            else:
-                a = np.r_[np.c_[self._F[:, i*m:(i+1)*m], np.zeros((m, k))],
-                          np.c_[np.zeros((k, m)), np.zeros((k, k))]]
-            coef_a[:, i*(m+k):(i+1)*(m+k)] = a
-        coef_a = np.r_[coef_a,
-                       np.c_[np.eye((lag-1)*(m+k)), np.zeros(((lag-1)*(m+k), m+k))]]
-        coef_b = np.r_[np.c_[np.eye(m), self._Gamma],
-                       np.c_[np.zeros((k, m)), np.eye(k)]]
-        if lag > 1:
-            coef_b = np.r_[coef_b, np.zeros(((lag-1)*(m+k), m+k))]
-        vma_coef = np.dot(matrix_power(coef_a, horizon), coef_b)
-        return vma_coef
+                et = np.c_[self._St[var_lag:, :], self._u]
+                self.var_covar[nloop-self.n_save] = np.dot(et.T, et)
+                self.impulse_response[nloop-self.n_save] = \
+                    ImpulseReponseFuntion(lag, var_lag, T=T[:n,:n],
+                                          F=self._F, Gamma=self._Gamma).calculate(self.horizon)
 
     def _get_W(self, w, m):
         W = np.empty((2*m, m))
@@ -554,15 +533,22 @@ class FactorAugumentedVARX(BayesianLinearRegression):
 
 
 class ImpulseReponseFuntion(object):
-    def __init__(self, lag, var_lag, ):
+    def __init__(self, lag, var_lag, *, T=None, F=None, Gamma=None):
         self.lag = lag
         self.var_lag = var_lag
+        self.Gamma = Gamma
+        self.T = T
+        self.F = F
+        self.m, self.k = Gamma.shape
+        self.impulse_response = dict()
 
-    def estimate(self, horizon, T):
-
+    def calculate(self, horizon):
+        for i in range(horizon):
+            self.impulse_response[horizon] = self._get_impulse_response(horizon)
         return
-    def _get_impulse_response(self, horizon, T):
-        m, k = self._Gamma.shape
+
+    def _get_impulse_response(self, horizon):
+        m, k = self.m, self.k
         lag = max(self.var_lag, self.lag)
         coef_a = np.zeros((m+k, lag*(m+k)))
         for i in range(lag):
@@ -570,16 +556,16 @@ class ImpulseReponseFuntion(object):
                 if self.lag < self.var_lag:
                     F = np.zeros((m, m))
                 else:
-                    F = self._F[:, i*m:(i+1)*m]
-                a = np.r_[np.c_[F, np.dot(self._Gamma, T)],
-                          np.c_[np.zeros((k, m)), T]]
+                    F = self.F[:, i*m:(i+1)*m]
+                a = np.r_[np.c_[F, np.dot(self.Gamma, self.T)],
+                          np.c_[np.zeros((k, m)), self.T]]
             else:
-                a = np.r_[np.c_[self._F[:, i*m:(i+1)*m], np.zeros((m, k))],
+                a = np.r_[np.c_[self.F[:, i*m:(i+1)*m], np.zeros((m, k))],
                           np.c_[np.zeros((k, m)), np.zeros((k, k))]]
             coef_a[:, i*(m+k):(i+1)*(m+k)] = a
         coef_a = np.r_[coef_a,
                        np.c_[np.eye((lag-1)*(m+k)), np.zeros(((lag-1)*(m+k), m+k))]]
-        coef_b = np.r_[np.c_[np.eye(m), self._Gamma],
+        coef_b = np.r_[np.c_[np.eye(m), self.Gamma],
                        np.c_[np.zeros((k, m)), np.eye(k)]]
         if lag > 1:
             coef_b = np.r_[coef_b, np.zeros(((lag-1)*(m+k), m+k))]
@@ -587,13 +573,13 @@ class ImpulseReponseFuntion(object):
         return vma_coef
 
 class GFEVarianceDecompose(object):
-    def __init__(self, horizon, coef, sigma, i, j):
+    def __init__(self, horizon, coef, sigma):
         self.horizon = horizon
         self.coef = coef
         self.sigma = sigma
-        self.contri_rate = np.empty((horizon, i, j))
 
     def compute(self, i, j):
+        self.contri_rate = np.empty((self.horizon, i, j))
         for ni in range(i):
             denominator = self._compute_denominator(ni)
             for nj in range(j):
