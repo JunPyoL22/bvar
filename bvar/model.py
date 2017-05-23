@@ -141,7 +141,7 @@ class BayesianLinearRegression(BayesianModel, Sampler):
         if self.y_type is 'multivariate':
             sigma_drawed = self.sampling_from_inverseWishart(scale, dof)
         elif self.y_type is 'univariate':
-            sigma_drawed = self.sampling_from_inverseGamma(scale, dof)
+            sigma_drawed = self.sampling_from_inverseGamma(0, 0, scale, dof)
         return coef_drawed, sigma_drawed
 
     def _sampling_from_conditional_posterior(self, *, coef_ols=None, sigma=None):
@@ -166,7 +166,7 @@ class BayesianLinearRegression(BayesianModel, Sampler):
         if self.y_type is 'multivariate':
             sigma_drawed = self.sampling_from_inverseWishart(scale, dof)
         elif self.y_type is 'univariate':
-            sigma_drawed = self.sampling_from_inverseGamma(scale, dof)
+            sigma_drawed = self.sampling_from_inverseGamma(0, 0, scale, dof)
         return coef_drawed, sigma_drawed
         
     def _save(self, coef, sigma, i):
@@ -406,10 +406,8 @@ class FactorAugumentedVARX(BayesianLinearRegression):
 
             # Set STATE VAR model to update factors dynamically
             state1 = factors
-            # state2 = factors[lag:, :]
             for i in range(1, lag+1):
                 state1 = np.append(state1, FX[i][lag-i:, :], axis=1)
-                # state2 = np.append(state2, np.ones((state2.shape[0], 1)), axis=1)
 
             var_setup = SetupForVAR(lag=var_lag, const=False).prepare(state1)
             state_var_Y = var_setup.Y
@@ -458,7 +456,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             if nloop >= self.n_save:
                 self.ir = dict()
                 for horizon in range(self.horizon):
-                    self.ir[horizon] = self._get_impulse_response(horizon, T)
+                    self.ir[horizon] = self._get_impulse_response(horizon, T[:n, :n])
 
     def _get_impulse_response(self, horizon, T):
         m, k = self._Gamma.shape
@@ -483,7 +481,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
         if lag > 1:
             coef_b = np.r_[coef_b, np.zeros(((lag-1)*(m+k), m+k))]
         vma_coef = np.dot(matrix_power(coef_a, horizon), coef_b)
-        return vma_coef[:m, :m]
+        return vma_coef
 
     def _get_W(self, w, m):
         W = np.empty((2*m, m))
@@ -554,29 +552,63 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                np.tile(T, (t-lag, 1)), np.tile(Q, (t-lag, 1)),\
                np.tile(R, (t-lag, 1))
 
+
+class ImpulseReponseFuntion(object):
+    def __init__(self, lag, var_lag, ):
+        self.lag = lag
+        self.var_lag = var_lag
+
+    def estimate(self, horizon, T):
+
+        return
+    def _get_impulse_response(self, horizon, T):
+        m, k = self._Gamma.shape
+        lag = max(self.var_lag, self.lag)
+        coef_a = np.zeros((m+k, lag*(m+k)))
+        for i in range(lag):
+            if self.lag <= self.var_lag:
+                if self.lag < self.var_lag:
+                    F = np.zeros((m, m))
+                else:
+                    F = self._F[:, i*m:(i+1)*m]
+                a = np.r_[np.c_[F, np.dot(self._Gamma, T)],
+                          np.c_[np.zeros((k, m)), T]]
+            else:
+                a = np.r_[np.c_[self._F[:, i*m:(i+1)*m], np.zeros((m, k))],
+                          np.c_[np.zeros((k, m)), np.zeros((k, k))]]
+            coef_a[:, i*(m+k):(i+1)*(m+k)] = a
+        coef_a = np.r_[coef_a,
+                       np.c_[np.eye((lag-1)*(m+k)), np.zeros(((lag-1)*(m+k), m+k))]]
+        coef_b = np.r_[np.c_[np.eye(m), self._Gamma],
+                       np.c_[np.zeros((k, m)), np.eye(k)]]
+        if lag > 1:
+            coef_b = np.r_[coef_b, np.zeros(((lag-1)*(m+k), m+k))]
+        vma_coef = np.dot(matrix_power(coef_a, horizon), coef_b)
+        return vma_coef
+
 class GFEVarianceDecompose(object):
     def __init__(self, horizon, coef, sigma, i, j):
         self.horizon = horizon
         self.coef = coef
         self.sigma = sigma
-        self.g = np.empty((horizon, i, j))
+        self.contri_rate = np.empty((horizon, i, j))
 
     def compute(self, i, j):
         for ni in range(i):
             denominator = self._compute_denominator(ni)
             for nj in range(j):
                 nominator = self._compute_nominator(ni, nj)
-            self.g[self.horizon, ni, nj] = nominator/denominator
+            self.contri_rate[self.horizon, ni, nj] = nominator/denominator
 
     def _compute_nominator(self, i, j):
-        nomi = np.empty((1, h))
+        nomi = np.empty((1, self.horizon))
         for h in range(self.horizon-1):
             nomi[:, h] = np.square(np.dot(self.coef[i, :],
                                           self.sigma[j, j]))
         return (1/self.sigma[j, j])*np.sum(nomi, axis=1)
 
     def _compute_denominator(self, i):
-        denomi = self.empty((1, h))
+        denomi = self.empty((1, self.horizon))
         for h in range(self.horizon-1):
             denomi[:, h] = np.dot(np.dot(self.coef[i, :],
                                          self.sigma[i, i]),

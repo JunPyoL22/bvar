@@ -35,9 +35,16 @@ data = np.array(Y, dtype=float)
 z = np.array(X_star, dtype=float)
 w = np.array(W, dtype=float)
 
+# model constant
+HORIZON =10
+
 os.chdir(MODULE_PATH)
-from model import FactorAugumentedVARX
+from model import FactorAugumentedVARX, GFEVarianceDecompose
 favarx = FactorAugumentedVARX(n_iter=100, n_save=50, lag=1, 
-                              var_lag=1, n_factor=3, horizon=10,
+                              var_lag=1, n_factor=3, horizon=HORIZON,
                               smoother_option='CarterKohn',
                               is_standardize=False).estimate(data, z, w)
+
+
+GFEVarianceDecompose(HORIZON, )
+# Add the precedures of Generalized ForecastError variance decomposition

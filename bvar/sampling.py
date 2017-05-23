@@ -27,9 +27,11 @@ class Sampler(object):
         km = mean.shape[0]
         return mean + np.dot(cholx(variance).T, randn(km, 1))
 
-    def sampling_from_inverseGamma(self, scale, dof):
-        z0 = randn(dof,1)
-        return scale/np.dot(z0.T,z0)
+    def sampling_from_inverseGamma(self, t0, v0, scale, dof):
+        t1 = t0 + dof
+        v1 = v0 + scale
+        z0 = randn(t1, 1)
+        return v1/np.dot(z0.T, z0)
 
     def sampling_from_inverseWishart(self, scale, dof):
         arr = np.dot(cholx(inv(scale)).T, randn(scale.shape[0], dof))
