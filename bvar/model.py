@@ -459,7 +459,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                 et = np.c_[self._St[var_lag:, :], self._u]
                 self.var_covar[nloop-self.n_save] = np.dot(et.T, et)
                 self.impulse_response[nloop-self.n_save] = \
-                    ImpulseReponseFuntion(lag, var_lag, T=T[:n,:n],
+                    ImpulseReponseFunction(lag, var_lag, T=T[:n,:n],
                                           F=self._F, Gamma=self._Gamma).calculate(self.horizon)
 
     def _get_W(self, w, m):
@@ -532,7 +532,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                np.tile(R, (t-lag, 1))
 
 
-class ImpulseReponseFuntion(object):
+class ImpulseReponseFunction(object):
     def __init__(self, lag, var_lag, *, T=None, F=None, Gamma=None):
         self.lag = lag
         self.var_lag = var_lag
@@ -545,7 +545,7 @@ class ImpulseReponseFuntion(object):
     def calculate(self, horizon):
         for i in range(horizon):
             self.impulse_response[horizon] = self._get_impulse_response(horizon)
-        return
+        return self.impulse_response
 
     def _get_impulse_response(self, horizon):
         m, k = self.m, self.k
@@ -591,13 +591,12 @@ class GFEVarianceDecompose(object):
         for h in range(self.horizon-1):
             nomi[:, h] = np.square(np.dot(self.coef[i, :],
                                           self.sigma[j, j]))
-        return (1/self.sigma[j, j])*np.sum(nomi, axis=1)
+        return np.sqrt(1/self.sigma[j, j])*np.sum(nomi, axis=1)
 
     def _compute_denominator(self, i):
         denomi = self.empty((1, self.horizon))
         for h in range(self.horizon-1):
             denomi[:, h] = np.dot(np.dot(self.coef[i, :],
                                          self.sigma[i, i]),
-                                  self.coef[i, :].T)
+                                         self.coef[i, :].T)
         return np.sum(denomi, axis=1)
-        
