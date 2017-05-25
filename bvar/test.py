@@ -3,7 +3,7 @@ import pandas as pd
 import os
 import sys
 
-def get_average_value(ir, var_covar, nsave)
+def get_average_value(ir, var_covar, nsave):
     sum_ir = 0
     sum_var_covar = 0
     for i in range(nsave):
@@ -44,8 +44,8 @@ z = np.array(X_star, dtype=float)
 w = np.array(W, dtype=float)
 
 # model constant
-NITER = 100
-NSAVE = 50
+NITER = 50
+NSAVE = 25
 HORIZON =10
 NIND = data.shape[1]
 NFACTOR = 3
