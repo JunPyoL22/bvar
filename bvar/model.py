@@ -532,7 +532,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                np.tile(R, (t-lag, 1))
 
 
-class ImpulseReponseFuntion(object):
+class ImpulseReponseFunction(object):
     def __init__(self, lag, var_lag, *, T=None, F=None, Gamma=None):
         self.lag = lag
         self.var_lag = var_lag
