@@ -328,8 +328,8 @@ class FactorAugumentedVARX(BayesianLinearRegression):
         self.horizon = horizon
         self.smoother_option = smoother_option
         self.is_standardize = is_standardize
-        self.impulse_response = dict()
-        self.var_covar = dict()
+        self.impulse_response = None
+        self.var_covar = None
 
     def estimate(self, Y, z, w):
         '''Assume Y, X has right form for VAR model to estimate
@@ -358,6 +358,8 @@ class FactorAugumentedVARX(BayesianLinearRegression):
         var_lag = self.var_lag
         r = np.ones((m, 1)) # variace of
         sigma = np.eye(n+1)
+        self.impulse_response = np.empty((self.n_save, self.horizon, m+n, m+n))
+        self.var_covar= np.empty((self.n_save, m+n, m+n))
 
         for nloop in range(self.n_iter):
             self._A = np.empty((m, 2))
@@ -457,10 +459,10 @@ class FactorAugumentedVARX(BayesianLinearRegression):
 
             if nloop >= self.n_save:
                 et = np.c_[self._St[var_lag:, :], self._u]
-                self.var_covar[nloop-self.n_save] = np.dot(et.T, et)
-                self.impulse_response[nloop-self.n_save] = \
+                self.var_covar[nloop-self.n_save, :, :] = np.dot(et.T, et)
+                self.impulse_response[nloop-self.n_save, :, :, :] = \
                     ImpulseReponseFunction(lag, var_lag, T=T[:n,:n],
-                                          F=self._F, Gamma=self._Gamma).calculate(self.horizon)
+                                           F=self._F, Gamma=self._Gamma).calculate(self.horizon)
 
     def _get_W(self, w, m):
         W = np.empty((2*m, m))
@@ -540,14 +542,19 @@ class ImpulseReponseFunction(object):
         self.T = T
         self.F = F
         self.m, self.k = Gamma.shape
-        self.impulse_response = dict()
 
     def calculate(self, horizon):
-        for i in range(horizon):
-            self.impulse_response[horizon] = self._get_impulse_response(horizon)
-        return self.impulse_response
+        impulse_response = np.empty((horizon,
+                                     self.m+self.k, self.m+self.k))
+        coef_a, coef_b = self._get_coefficients()
+        for h in range(horizon):
+            impulse_response[h, :, :] = self._get_impulse_response(h, coef_a, coef_b)
+        return impulse_response
 
-    def _get_impulse_response(self, horizon):
+    def _get_impulse_response(self, horizon, coef_a, coef_b):
+        return np.dot(matrix_power(coef_a, horizon), coef_b)
+
+    def _get_coefficients(self):
         m, k = self.m, self.k
         lag = max(self.var_lag, self.lag)
         coef_a = np.zeros((m+k, lag*(m+k)))
@@ -569,34 +576,37 @@ class ImpulseReponseFunction(object):
                        np.c_[np.zeros((k, m)), np.eye(k)]]
         if lag > 1:
             coef_b = np.r_[coef_b, np.zeros(((lag-1)*(m+k), m+k))]
-        vma_coef = np.dot(matrix_power(coef_a, horizon), coef_b)
-        return vma_coef
+        return coef_a, coef_b
 
 class GFEVarianceDecompose(object):
     def __init__(self, horizon, coef, sigma):
         self.horizon = horizon
         self.coef = coef
         self.sigma = sigma
+        self.contri_rate = dict()
+
 
     def compute(self, i, j):
-        self.contri_rate = np.empty((self.horizon, i, j))
+        contri_rate = np.empty((i, j))
         for ni in range(i):
             denominator = self._compute_denominator(ni)
             for nj in range(j):
                 nominator = self._compute_nominator(ni, nj)
-            self.contri_rate[self.horizon, ni, nj] = nominator/denominator
+                contri_rate[ni, nj] = nominator / denominator
+        self.contri_rate[self.horizon] = contri_rate
+        return self
 
     def _compute_nominator(self, i, j):
         nomi = np.empty((1, self.horizon))
         for h in range(self.horizon-1):
-            nomi[:, h] = np.square(np.dot(self.coef[i, :],
-                                          self.sigma[j, j]))
+            nomi[:, h] = np.square(np.dot(self.coef[h][i, :],
+                                          self.sigma[:, j]))
         return np.sqrt(1/self.sigma[j, j])*np.sum(nomi, axis=1)
 
     def _compute_denominator(self, i):
-        denomi = self.empty((1, self.horizon))
+        denomi = np.empty((1, self.horizon))
         for h in range(self.horizon-1):
-            denomi[:, h] = np.dot(np.dot(self.coef[i, :],
-                                         self.sigma[i, i]),
-                                         self.coef[i, :].T)
+            denomi[:, h] = np.dot(np.dot(self.coef[h][i, :],
+                                         self.sigma),
+                                         self.coef[h][i, :].T)
         return np.sum(denomi, axis=1)

@@ -4,12 +4,9 @@ import os
 import sys
 
 def get_average_value(ir, var_covar, nsave):
-    sum_ir = 0
-    sum_var_covar = 0
-    for i in range(nsave):
-        sum_ir = sum_ir + ir[i]
-        sum_var_covar = sum_var_covar + var_covar[i]
-    return np.divide(sum_ir, nsave), np.divide(sum_var_covar, nsave)
+    avg_ir_by_horion = np.divide(np.sum(ir, axis=0), nsave)
+    avg_var_covar = np.divide(np.sum(var_covar, axis=0), nsave)
+    return avg_ir_by_horion, avg_var_covar
 
 np.set_printoptions(precision=3, suppress=True)
 if sys.platform == 'win32':
