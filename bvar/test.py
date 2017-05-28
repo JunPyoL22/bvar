@@ -4,8 +4,6 @@ import os
 import sys
 
 def get_average_value(ir, var_covar, nsave):
-    avg_ir_by_horion = np.divide(np.sum(ir, axis=0), nsave)
-    avg_var_covar = np.divide(np.sum(var_covar, axis=0), nsave)
     return avg_ir_by_horion, avg_var_covar
 
 np.set_printoptions(precision=3, suppress=True)
@@ -54,10 +52,9 @@ favarx = FactorAugumentedVARX(n_iter=NITER, n_save=NSAVE, lag=1,
                               smoother_option='CarterKohn',
                               is_standardize=False).estimate(data, z, w)
 
-avg_impulse_response, \
-avg_var_covar = get_average_value(favarx.impulse_response,
-                                  favarx.var_covar,
-                                  NSAVE)
+# average
+avg_impulse_response = np.divide(np.sum(favarx.impulse_response, axis=0), NSAVE)
+avg_var_covar = np.divide(np.sum(favarx.var_covar, axis=0), NSAVE)
 
 CONTRI_RATE = GFEVarianceDecompose(HORIZON, avg_impulse_response,
                                    avg_var_covar).compute(NIND, NIND+NFACTOR).contri_rate
