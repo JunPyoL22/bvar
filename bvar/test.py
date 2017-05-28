@@ -46,7 +46,7 @@ NIND = data.shape[1]
 NFACTOR = 3
 
 os.chdir(MODULE_PATH)
-from model import FactorAugumentedVARX, GFEVarianceDecompose
+from model import FactorAugumentedVARX, GFEVarianceDecompose, VarianceDecompositionMatrix
 favarx = FactorAugumentedVARX(n_iter=NITER, n_save=NSAVE, lag=1,
                               var_lag=1, n_factor=NFACTOR, horizon=HORIZON,
                               smoother_option='CarterKohn',
@@ -59,3 +59,7 @@ avg_var_covar = np.divide(np.sum(favarx.var_covar, axis=0), NSAVE)
 CONTRI_RATE = GFEVarianceDecompose(HORIZON, avg_impulse_response,
                                    avg_var_covar).compute(NIND, NIND+NFACTOR).contri_rate
 
+vdm = VarianceDecompositionMatrix(NIND, CONTRI_RATE[HORIZON]).calculate_spillover_effect()
+spil_to_oths = vdm.spillover_to_oths
+spil_from_oths = vdm.spillover_from_oths
+net_effect = vdm.net_spillover

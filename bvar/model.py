@@ -610,3 +610,29 @@ class GFEVarianceDecompose(object):
                                          self.sigma),
                                          self.coef[h][i, :].T)
         return np.sum(denomi, axis=1)
+
+class VarianceDecompositionMatrix(object):
+    def __init__(self, n_ind, var_decomp):
+        self.n_ind = n_ind
+        self.var_decomp = var_decomp
+        self.spillover_from_oths = np.empty((n_ind, 1))
+        self.spillover_to_oths = np.empty((n_ind, 1))
+        self.net_spillover = None
+
+    def calculate_spillover_from_oths(self):
+        for i in range(self.n_ind):
+            self.spillover_from_oths[i, :] = np.sum(self.var_decomp[i:i+1, :], axis=1) \
+                                             - self.var_decomp[i, i]
+        return self
+
+    def calculate_spillover_to_oths(self):
+        for i in range(self.n_ind):
+            self.spillover_to_oths[i, :] = np.sum(self.var_decomp[:, i:i+1], axis=0) \
+                                           - self.var_decomp[i, i]
+        return self
+
+    def calculate_spillover_effect(self):
+        self.calculate_spillover_to_oths()
+        self.calculate_spillover_from_oths()
+        self.net_spillover = self.spillover_to_oths - self.spillover_from_oths
+        return self
