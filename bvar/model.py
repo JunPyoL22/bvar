@@ -359,7 +359,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
         r = np.ones((m, 1)) # variace of
         sigma = np.eye(n+1)
         self.impulse_response = np.empty((self.n_save, self.horizon, m+n, m+n))
-        self.var_covar= np.empty((self.n_save, m+n, m+n))
+        self.et = np.empty((self.n_save, m+n, 1))
 
         for nloop in range(self.n_iter):
             self._A = np.empty((m, 2))
@@ -458,10 +458,9 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                                              R=R, H=H, Q=Q, s=n).drawed_state[:, :n]
 
             if nloop >= self.n_save:
-                et = np.c_[self._St[var_lag:, :], self._u]
-                self.var_covar[nloop-self.n_save, :, :] = np.dot(et.T, et)
+                self.et[nloop-self.n_save, :] = np.c_[self._St[var_lag:, :], self._u]
                 self.impulse_response[nloop-self.n_save, :, :, :] = \
-                    ImpulseReponseFunction(lag, var_lag, T=T[:n,:n],
+                    ImpulseReponseFunction(lag, var_lag, T=T[:n, :n],
                                            F=self._F, Gamma=self._Gamma).calculate(self.horizon)
 
     def _get_W(self, w, m):
@@ -532,7 +531,6 @@ class FactorAugumentedVARX(BayesianLinearRegression):
         return np.tile(Z, (t-lag, 1)), np.tile(H, (t-lag, 1)),\
                np.tile(T, (t-lag, 1)), np.tile(Q, (t-lag, 1)),\
                np.tile(R, (t-lag, 1))
-
 
 class ImpulseReponseFunction(object):
     def __init__(self, lag, var_lag, *, T=None, F=None, Gamma=None):

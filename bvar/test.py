@@ -3,9 +3,6 @@ import pandas as pd
 import os
 import sys
 
-def get_average_value(ir, var_covar, nsave):
-    return avg_ir_by_horion, avg_var_covar
-
 np.set_printoptions(precision=3, suppress=True)
 if sys.platform == 'win32':
     SYS = 'WIN'
@@ -52,12 +49,13 @@ favarx = FactorAugumentedVARX(n_iter=NITER, n_save=NSAVE, lag=1,
                               smoother_option='CarterKohn',
                               is_standardize=False).estimate(data, z, w)
 
-# average
-avg_impulse_response = np.divide(np.sum(favarx.impulse_response, axis=0), NSAVE)
-avg_var_covar = np.divide(np.sum(favarx.var_covar, axis=0), NSAVE)
+# average over the number of drawed
+impulse_response = np.mean(favarx.impulse_response, axis=0)
+et = np.mean(favarx.et, axis=0)
+var_covar = np.dot(et, et.T)
 
-CONTRI_RATE = GFEVarianceDecompose(HORIZON, avg_impulse_response,
-                                   avg_var_covar).compute(NIND, NIND+NFACTOR).contri_rate
+CONTRI_RATE = GFEVarianceDecompose(HORIZON, impulse_response,
+                                   var_covar).compute(NIND, NIND+NFACTOR).contri_rate
 
 vdm = VarianceDecompositionMatrix(NIND, CONTRI_RATE[HORIZON]).calculate_spillover_effect()
 spil_to_oths = vdm.spillover_to_oths
