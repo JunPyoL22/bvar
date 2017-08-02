@@ -1,9 +1,9 @@
 import numpy as np
 from numpy.linalg import inv, matrix_power
-from base import BaseLinearRegression, BayesianModel, BasePrior, SetupForVAR
-from sampling import Sampler
-from utils import standardize, cholx, vec, DotDict, is_coefficient_stable
-from smoother import DurbinKoopmanSmoother, CarterKohn
+from .base import BaseLinearRegression, BayesianModel, BasePrior, SetupForVAR
+from .sampling import Sampler
+from .utils import standardize, cholx, vec, DotDict, is_coefficient_stable, get_principle_component
+from .smoother import DurbinKoopmanSmoother, CarterKohn
 
 class BayesianLinearRegression(BayesianModel, Sampler):
 
@@ -114,11 +114,11 @@ class BayesianLinearRegression(BayesianModel, Sampler):
         for i in range(self.n_iter):
             if self.prior_option_key is 'Conjugate':
                 coef, sigma = self._sampling_from_posterior(coef_ols=ols.coef,
-                                                           sigma=sigma,
-                                                           sse_ols=ols.sse)
+                                                            sigma=sigma,
+                                                            sse_ols=ols.sse)
             elif self.prior_option_key is 'NonConjugate':
                 coef, sigma = self._sampling_from_conditional_posterior(coef_ols=ols.coef,
-                                                                       sigma=sigma)
+                                                                        sigma=sigma)
             self._save(coef, sigma, i)
         return self
 
@@ -348,7 +348,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
         return self
 
     def _get_principle_component(self, Y):
-        from utils import get_principle_component
+        # from .utils import get_principle_component
         return get_principle_component(Y, self.n_factor)
 
     def _gibbs_sampling(self, Y, z, factors):
@@ -492,7 +492,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             self._B[n:n+1, i*2:(i+1)*2] = np.c_[coef[self.n_factor+i, :],
                                                 coef[self.n_factor+i+self.lag+1, :]]
             self._H[n:n+1, i*m:(i+1)*m] = np.dot(self._B[n:n+1, 2*i:2*(i+1)],
-                                                  self._W[2*n:2*(n+1), :])
+                                                 self._W[2*n:2*(n+1), :])
         return self
 
     def _get_initial_value_of_state(self, state, lag):
@@ -501,7 +501,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
         state0_var = np.eye(state0.shape[1])
         return state0, state0_var
 
-    def _get_state_space_model_parameters(self, coef, reshaped_coef, sigma,
+    def _get_state_space_model_parameters(self, reshaped_coef, sigma,
                                           r, lag, var_lag, t):
         '''
         This function returns parameters on
@@ -532,11 +532,11 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                np.tile(T, (t-lag, 1)), np.tile(Q, (t-lag, 1)),\
                np.tile(R, (t-lag, 1))
 
-class ImpulseReponseFunction(object):
+class ImpulseReponseFunction:
     def __init__(self, lag, var_lag, *, T=None, F=None, Gamma=None):
         self.lag = lag
         self.var_lag = var_lag
-        self.Gamma = Gamma
+        self.Gamma = Gamma #mxn_factor
         self.T = T
         self.F = F
         self.m, self.k = Gamma.shape
@@ -544,7 +544,7 @@ class ImpulseReponseFunction(object):
     def calculate(self, horizon):
         impulse_response = np.empty((horizon,
                                      self.m+self.k, self.m+self.k))
-        coef_a, coef_b = self._get_coefficients()
+        coef_a, coef_b = self.get_coefficients()
         for h in range(horizon):
             impulse_response[h, :, :] = self._get_impulse_response(h, coef_a, coef_b)
         return impulse_response
@@ -575,6 +575,44 @@ class ImpulseReponseFunction(object):
         if lag > 1:
             coef_b = np.r_[coef_b, np.zeros(((lag-1)*(m+k), m+k))]
         return coef_a, coef_b
+
+    def get_coefficients(self):
+        m , obsEq_lag = self.m, self.lag
+        obsEq_Coeff = np.c_[self.Gamma, np.ones((m, obsEq_lag))]
+        transEq_Coeff = self.T
+        A = self.__get_coefficient_A(obsEq_Coeff, transEq_Coeff)
+        B = self.__get_coefficient_B(obsEq_Coeff)
+        return A, B
+
+    def __get_coefficient_A(self, obsEq_Coeff, transEq_Coeff):
+
+        m, nFactors, obsEq_lag, transEq_lag = self.m, self.k, self.lag, self.var_lag
+        matrix = np.zeros((m+nFactors+obsEq_lag, transEq_lag*(m+nFactors+obsEq_lag)))
+
+        for i in range(transEq_lag):
+            transEq_coeff = transEq_Coeff[:nFactors+obsEq_lag,
+                                          i*(nFactors+obsEq_lag):(i+1)*(nFactors+obsEq_lag)]
+            matrix11 = np.zeros(m, m)
+            matrix12 = obsEq_Coeff.dot(transEq_coeff) # mx(nfactors+obsEq_lag)
+            matrix21 = np.zeros((nFactors+obsEq_lag, m))
+            matrix22 = transEq_coeff #(nFactors+obsEq_lag)*(nFactors+obsEq_lag)
+
+            matrix[:, i*(m+nFactors+obsEq_lag):(i+1)*(m+nFactors+obsEq_lag)] = np.r_[np.c_[matrix11, matrix12],
+                                                                                     np.c_[matrix21, matrix22]]
+        return np.r_[matrix,
+                     np.c_[np.eye((transEq_lag-1)*(m+nFactors+obsEq_lag)), np.zeros(((transEq_lag-1)*(m+nFactors+obsEq_lag), m+nFactors+obsEq_lag))]]
+
+
+    def __get_coefficient_B(self, obsEq_Coeff):
+        m, nFactors, obsEq_lag = self.m, self.k, self.lag
+
+        matrix11 = np.eye(m)
+        matrix12 = obsEq_Coeff # mx(nfactors+obsEq_lag)
+        matrix21 = np.zeros((nFactors+obsEq_lag, m))
+        matrix22 = np.eye(nFactors+obsEq_lag)
+        return np.r_[np.c_[matrix11, matrix12],
+                     np.c_[matrix21, matrix22]]
+
 
 class GFEVarianceDecompose(object):
     def __init__(self, horizon, coef, sigma):
