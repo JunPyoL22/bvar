@@ -1,9 +1,14 @@
 #%%
-import numpy as np
-import pandas as pd
 import os
 import sys
-from .model import FactorAugumentedVARX, GFEVarianceDecompose, VarianceDecompositionMatrix
+
+import numpy as np
+import pandas as pd
+
+from bvar.filter import HpFilter
+from db.monthly import LaborProductivity
+
+# from bvar.model import FactorAugumentedVARX, GFEVarianceDecompose, VarianceDecompositionMatrix
 
 if __name__=="__main__":
 
@@ -16,9 +21,26 @@ if __name__=="__main__":
         if SYS is 'MAC':
             DATA_PATH = '/Users/Junpyo/Google Drive/data'
             MODULE_PATH = '/Users/Junpyo/project/bvar/bvar'
+
         if SYS is 'WIN':
             DATA_PATH = 'D:\\Google Drive\\data'
             MODULE_PATH = 'C:\\project\\bvar\\bvar'
+
+        # Input, Output from DataBase and calculate monthly productivity
+        INDCODE_1DIGIT = ['B', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U']
+        INDCODE_2DIGIT = [str(i) for i in range(10, 33)]
+        INDCODE = INDCODE_1DIGIT + INDCODE_2DIGIT
+        MONTH = [str(i) for i in range(1, 13)]
+        START_YEAR = 2008
+        LAST_YEAR = 2017
+
+        lpd = LaborProductivity('prod', 'mh_input_t', INDCODE, START_YEAR, LAST_YEAR)
+        monthly_prd = lpd.monthly_producvitiy.dropna()
+        pivot_table = monthly_prd.pivot('prd_index')
+        # Applying HP filter to monthl_lpd
+        hp_filter = HpFilter(period_type='Month')
+
+
 
         # DATA import
         os.chdir(DATA_PATH)
