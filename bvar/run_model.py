@@ -4,11 +4,28 @@ import sys
 
 import numpy as np
 import pandas as pd
-
 from bvar.filter import HpFilter
 from db.monthly import LaborProductivity
+from bvar.model import FactorAugumentedVARX, GFEVarianceDecompose, VarianceDecompositionMatrix
 
-# from bvar.model import FactorAugumentedVARX, GFEVarianceDecompose, VarianceDecompositionMatrix
+def get_productivty_variation(data, cycle_span):
+    hp_filter = HpFilter(period_type=cycle_span)
+    prd_cycle = np.empty(data.shape, dtype=np.float32)
+    ind_codes = list(data.columns)
+    for i, _ in enumerate(ind_codes):
+        hp_filter.filtering(np.array(data)[:,i:i+1])
+        prd_cycle[:, i:i + 1] = hp_filter.cycle
+
+    return pd.DataFrame(prd_cycle, columns=ind_codes, index=data.index)
+
+def calculate_industrial_likage_dataset(W, prd):
+    total_rows, total_inds = prd.shape
+    result = np.empty((total_rows, total_inds), dtype=np.float32)
+    for j in total_inds:
+        W[j:j+1, j:j+1] = 0
+        for i in total_rows:
+             result[i:i+1, j:j+1] = np.dot(prd, W.T)
+    return result
 
 if __name__=="__main__":
 
@@ -36,26 +53,29 @@ if __name__=="__main__":
 
         lpd = LaborProductivity('prod', 'mh_input_t', INDCODE, START_YEAR, LAST_YEAR)
         monthly_prd = lpd.monthly_producvitiy.dropna()
-        pivot_table = monthly_prd.pivot('prd_index')
-        # Applying HP filter to monthl_lpd
-        hp_filter = HpFilter(period_type='Month')
+        monthly_prd.loc[:,['year','mq']] = monthly_prd[['year','mq']].astype(np.int)
+        monthly_prd.sort_values(by=['year', 'mq'], inplace=True)
 
+        pivoted_data = pd.pivot_table(monthly_prd, values='prd_index', columns='kisc_code', index=['year','mq'])
+        # Applying HP filter to monthly_prd
+        Y = get_productivty_variation(pivoted_data, 'Month')
+        new_column_names = ['C'+name if len(name)==2 else name for name in Y.columns]
+        Y.columns = new_column_names
+        Y.sort_index(axis=1, inplace=True)
 
-
-        # DATA import
+        # import DATA from other external sources
         os.chdir(DATA_PATH)
-        Y = pd.read_csv('detrended_prd_index.csv', delimiter=',',
-                        dtype=float, header=0, usecols=range(1,40))
-
-        new_names = np.sort(['C'+name for name in Y.columns if len(name)==2] + \
-                            [name for name in Y.columns if len(name)==1])
-        Y.columns = new_names
-        Y = Y.ix[:, new_names]
+        # Y_old = pd.read_csv('detrended_prd_index.csv', delimiter=',',
+        #                 dtype=float, header=0, usecols=range(1,40))
+        # new_names = np.sort(['C'+name for name in Y.columns if len(name)==2] + \
+        #                     [name for name in Y.columns if len(name)==1])
+        # Y_old.columns = new_names
+        # Y_old = Y_old.ix[:, new_names]
 
         X_star = pd.read_csv('Xstar.csv', delimiter=',',
-                             dtype=float, header=0, usecols=range(2,41))
+                             dtype=np.float, header=0, usecols=range(2,41))
         W = pd.read_csv('weight.csv', delimiter=',',
-                        dtype=float, header=0, usecols=range(2,41))
+                        dtype=np.float, header=0, usecols=range(2,41))
 
         data = np.array(Y, dtype=float)
         z = np.array(X_star, dtype=float)
