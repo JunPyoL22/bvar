@@ -1,9 +1,9 @@
 import numpy as np
 from numpy.linalg import inv, matrix_power
-from .base import BaseLinearRegression, BayesianModel, BasePrior, SetupForVAR
-from .sampling import Sampler
-from .utils import standardize, cholx, vec, DotDict, is_coefficient_stable, get_principle_component
-from .smoother import DurbinKoopmanSmoother, CarterKohn
+from bvar.base import BaseLinearRegression, BayesianModel, BasePrior, SetupForVAR
+from bvar.sampling import Sampler
+from bvar.utils import standardize, cholx, vec, DotDict, is_coefficient_stable, get_principle_component
+from bvar.smoother import DurbinKoopmanSmoother, CarterKohn
 
 class BayesianLinearRegression(BayesianModel, Sampler):
 
@@ -104,7 +104,12 @@ class BayesianLinearRegression(BayesianModel, Sampler):
         return self
 
     def _gibbs_sampling(self, Y, X, sigma0):
-        ols = self.fit(Y, X, method='ls')
+        try:
+            ols = self.fit(Y, X, method='ls')
+        except:
+            print(Y)
+            print(X)
+
         if sigma0 is None and self.prior_type is 'Informative':
             raise ValueError('When prior_type is Informative, sigma must be assigned')
         sigma = np.eye(self.m)
@@ -333,7 +338,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
 
     def estimate(self, Y, z, w):
         '''Assume Y, X has right form for VAR model to estimate
-           must include or implement checking dimension of Y, X for estimating'''
+           must include or implement code for checking dimension of Y, X for estimating'''
         t, m = Y.shape
 
         if self.is_standardize is False:

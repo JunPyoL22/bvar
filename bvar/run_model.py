@@ -12,20 +12,20 @@ def get_productivty_variation(data, cycle_span):
     hp_filter = HpFilter(period_type=cycle_span)
     prd_cycle = np.empty(data.shape, dtype=np.float32)
     ind_codes = list(data.columns)
+    ln_data = np.log(np.array(data, dtype=np.float32))
     for i, _ in enumerate(ind_codes):
-        hp_filter.filtering(np.array(data)[:,i:i+1])
+        hp_filter.filtering(ln_data[:,i:i+1])
         prd_cycle[:, i:i + 1] = hp_filter.cycle
-
     return pd.DataFrame(prd_cycle, columns=ind_codes, index=data.index)
 
-def calculate_industrial_likage_dataset(W, prd):
+def calculate_industrial_linkage_data(weight, prd):
     total_rows, total_inds = prd.shape
-    result = np.empty((total_rows, total_inds), dtype=np.float32)
-    for j in total_inds:
-        W[j:j+1, j:j+1] = 0
-        for i in total_rows:
-             result[i:i+1, j:j+1] = np.dot(prd, W.T)
-    return result
+    prd_star = np.empty((total_rows, total_inds), dtype=np.float32)
+    for i in range(total_inds):
+        temp = prd.copy()
+        temp[:, i:i+1] = np.zeros((total_rows,1))
+        prd_star[:, i:i+1] = np.dot(temp, weight.T[:, i:i+1])
+    return prd_star
 
 if __name__=="__main__":
 
@@ -58,41 +58,42 @@ if __name__=="__main__":
 
         pivoted_data = pd.pivot_table(monthly_prd, values='prd_index', columns='kisc_code', index=['year','mq'])
         # Applying HP filter to monthly_prd
-        Y = get_productivty_variation(pivoted_data, 'Month')
-        new_column_names = ['C'+name if len(name)==2 else name for name in Y.columns]
-        Y.columns = new_column_names
-        Y.sort_index(axis=1, inplace=True)
+        prd_cycle = get_productivty_variation(pivoted_data, 'Month')
+        new_column_names = ['C'+name if len(name)==2 else name for name in prd_cycle.columns]
+        prd_cycle.columns = new_column_names
+        prd_cycle.sort_index(axis=1, inplace=True)
 
-        # import DATA from other external sources
-        os.chdir(DATA_PATH)
         # Y_old = pd.read_csv('detrended_prd_index.csv', delimiter=',',
         #                 dtype=float, header=0, usecols=range(1,40))
         # new_names = np.sort(['C'+name for name in Y.columns if len(name)==2] + \
         #                     [name for name in Y.columns if len(name)==1])
         # Y_old.columns = new_names
         # Y_old = Y_old.ix[:, new_names]
+        # X_star = pd.read_csv('Xstar.csv', delimiter=',',
+        #                      dtype=np.float, header=0, usecols=range(2,41))
 
-        X_star = pd.read_csv('Xstar.csv', delimiter=',',
-                             dtype=np.float, header=0, usecols=range(2,41))
-        W = pd.read_csv('weight.csv', delimiter=',',
-                        dtype=np.float, header=0, usecols=range(2,41))
+        # import DATA from other external sources
+        os.chdir(DATA_PATH)
+        W_df = pd.read_csv('weight.csv', delimiter=',',
+                        dtype=np.float32, header=0, usecols=range(2,41))
 
-        data = np.array(Y, dtype=float)
-        z = np.array(X_star, dtype=float)
-        w = np.array(W, dtype=float)
+        prd = np.array(prd_cycle, dtype=np.float32)
+        weight = np.array(W_df, dtype=np.float64)
+        prd_star = calculate_industrial_linkage_data(weight, prd)
 
-        # model constant
-        NITER = 50
-        NSAVE = 25
+
+        # model params
+        N_ITER = 50
+        N_SAVE = 25
         HORIZON =10
-        NIND = data.shape[1]
-        NFACTOR = 3
+        N_IND = prd.shape[1]
+        N_FACTOR = 3
 
         os.chdir(MODULE_PATH)
-        favarx = FactorAugumentedVARX(n_iter=NITER, n_save=NSAVE, lag=1,
-                                      var_lag=1, n_factor=NFACTOR, horizon=HORIZON,
+        favarx = FactorAugumentedVARX(n_iter=N_ITER, n_save=N_SAVE, lag=1,
+                                      var_lag=1, n_factor=N_FACTOR, horizon=HORIZON,
                                       smoother_option='CarterKohn',
-                                      is_standardize=False).estimate(data, z, w)
+                                      is_standardize=False).estimate(prd, prd_star, weight)
 
         # average over the number of drawed
         impulse_response = np.mean(favarx.impulse_response, axis=0)
@@ -100,9 +101,9 @@ if __name__=="__main__":
         var_covar = np.dot(et, et.T)
 
         CONTRI_RATE = GFEVarianceDecompose(HORIZON, impulse_response,
-                                           var_covar).compute(NIND, NIND+NFACTOR).contri_rate
+                                           var_covar).compute(N_IND, N_IND+N_FACTOR).contri_rate
 
-        vdm = VarianceDecompositionMatrix(NIND, CONTRI_RATE[HORIZON]).calculate_spillover_effect()
+        vdm = VarianceDecompositionMatrix(N_IND, CONTRI_RATE[HORIZON]).calculate_spillover_effect()
         spil_to_oths = vdm.spillover_to_oths
         spil_from_oths = vdm.spillover_from_oths
         net_effect = vdm.net_spillover

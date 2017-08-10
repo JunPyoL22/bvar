@@ -1,7 +1,7 @@
 import numpy as np
 from numpy.linalg import inv
 from numpy.random import randn
-from utils import cholx
+from bvar.utils import cholx
 
 
 def draw_inverse_gamma(T0, D0, x):
