@@ -1,6 +1,6 @@
 import numpy as np
 from numpy.linalg import inv, matrix_power
-from tqdm import tnrange, tqdm_notebook
+from tqdm import tqdm, tnrange, tqdm_notebook
 from time import sleep
 from bvar.base import BaseLinearRegression, BayesianModel, BasePrior, SetupForVAR
 from bvar.sampling import Sampler
@@ -366,7 +366,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
         self.et = np.empty((self.n_save, t-(lag+var_lag), m+n))
 
         # for nloop in range(self.n_iter):
-        for nloop in tnrange(self.n_iter, desc='1st loop'):
+        for nloop in tqdm(range(self.n_iter), desc='1st loop'):
             self._A = np.empty((m, 2))
             self._B = np.empty((m, 2*lag))
             self._G = np.empty((m, m))
@@ -376,7 +376,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             self._e = np.empty((t-lag, m))
 
             # for ind in range(m):
-            for ind in tnrange(m, desc='2nd loop', leave=False):
+            for ind in tqdm(range(m), desc='2nd loop', leave=False):
                 y_i = Y[:, ind: ind + 1]
                 z_i = z[:, ind: ind + 1]
                 y_i_lag = SetupForVAR(lag=lag, const=False).prepare(y_i).X
@@ -438,15 +438,6 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             coef, reshaped_coef, sigma = te_model.coef, te_model.reshaped_coef, te_model.sigma
             self._u = state_var_Y[:, :n] - \
                       np.dot(state_var_X, reshaped_coef)[:, :n]
-
-            # Z_2 = np.empty((0, self._Gamma.shape[1]+lag))
-            # for i in range(m):
-            #     tiled_Gamma = np.tile(self._Gamma[i:i+1, :], (FX[lag].shape[0], 1)) #tx1
-            #     Z_temp = np.empty((FX[lag].shape[0], 0))
-            #     for j in range(1, lag+1):
-            #         Z_temp = np.append(Z_temp, FX[j][lag-j:, :], axis=1)
-            #         z2 = np.c_[tiled_Gamma, Z_temp]
-            #     Z_2 = np.r_(Z_2, z2) #(mx(n+lag))
 
             Z, H, T, Q, R = self._get_state_space_model_parameters(reshaped_coef, sigma, r,
                                                                    lag, var_lag, t)

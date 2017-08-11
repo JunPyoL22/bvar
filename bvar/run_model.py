@@ -97,25 +97,25 @@ if __name__=="__main__":
                                       smoother_option='CarterKohn',
                                       is_standardize=False).estimate(prd, prd_star, weight)
 
-        # # Average over the number of drawed
-        # imp_res_1 = np.mean(favarx_1.impulse_response, axis=0)
-        # et = np.mean(favarx_1.et, axis=0)
-        # var_covar_1 = np.dot(et.T, et)
-        #
-        # CONTRI_RATE_1 = GFEVarianceDecompose(HORIZON_1, imp_res_1,
-        #                                    var_covar_1).compute(N_IND, N_IND+N_FACTOR).contri_rate
-        #
-        # vdm = VarianceDecompositionMatrix(N_IND, CONTRI_RATE_1[HORIZON_1]).calculate_spillover_effect()
-        # spil_to_oths = vdm.spillover_to_oths
-        # spil_from_oths = vdm.spillover_from_oths
-        # net_effect = vdm.net_spillover
-        #
-        # # Adjustment of contribution rate
-        # column_sum_contri_rate_1 = np.sum(CONTRI_RATE_1[HORIZON_1], keepdims=True, axis=1)
-        # adj_contri_rate_1 = 100*np.divide(CONTRI_RATE_1[HORIZON_1], column_sum_contri_rate_1)
-        #
-        # # Export result to excel file
-        # column_label = list(W_df.columns) + ['Macro_factor_1', 'Macro_factor_2', 'Macro_factor_3']
-        # result_1 = pd.DataFrame(adj_contri_rate_1,
-        #                       columns=column_label)
-        # ExcelExporter(DATA_PATH, 'industrial_spillover_result_1.xlsx', result_1).write_data(sheetname='Sheet1')
+        # Average over the number of drawed
+        imp_res_1 = np.mean(favarx_1.impulse_response, axis=0)
+        et = np.mean(favarx_1.et, axis=0)
+        var_covar_1 = np.dot(et.T, et)
+
+        CONTRI_RATE_1 = GFEVarianceDecompose(HORIZON_1, imp_res_1,
+                                           var_covar_1).compute(N_IND, N_IND+N_FACTOR).contri_rate
+
+        vdm = VarianceDecompositionMatrix(N_IND, CONTRI_RATE_1[HORIZON_1]).calculate_spillover_effect()
+        spil_to_oths = vdm.spillover_to_oths
+        spil_from_oths = vdm.spillover_from_oths
+        net_effect = vdm.net_spillover
+
+        # Adjustment of contribution rate
+        column_sum_contri_rate_1 = np.sum(CONTRI_RATE_1[HORIZON_1], keepdims=True, axis=1)
+        adj_contri_rate_1 = 100*np.divide(CONTRI_RATE_1[HORIZON_1], column_sum_contri_rate_1)
+
+        # Export result to excel file
+        column_label = list(W_df.columns) + ['Macro_factor_1', 'Macro_factor_2', 'Macro_factor_3']
+        result_1 = pd.DataFrame(adj_contri_rate_1,
+                              columns=column_label)
+        ExcelExporter(DATA_PATH, 'industrial_spillover_result_1.xlsx', result_1).write_data(sheetname='Sheet1')
