@@ -7,6 +7,7 @@ import pandas as pd
 from bvar.filter import HpFilter
 from db.monthly import LaborProductivity
 from bvar.model import FactorAugumentedVARX, GFEVarianceDecompose, VarianceDecompositionMatrix
+from bvar.utils import ExcelExporter
 
 def get_productivty_variation(data, cycle_span):
     hp_filter = HpFilter(period_type=cycle_span)
@@ -31,19 +32,19 @@ if __name__=="__main__":
 
         np.set_printoptions(precision=3, suppress=True)
         if sys.platform == 'win32':
-            SYS = 'WIN'
+            SYS = 'Window'
         else:
-            SYS = 'MAC'
+            SYS = 'Mac'
 
-        if SYS is 'MAC':
+        if SYS is 'Mac':
             DATA_PATH = '/Users/Junpyo/Google Drive/data'
             MODULE_PATH = '/Users/Junpyo/project/bvar/bvar'
 
-        if SYS is 'WIN':
+        if SYS is 'Window':
             DATA_PATH = 'D:\\Google Drive\\data'
             MODULE_PATH = 'C:\\project\\bvar\\bvar'
 
-        # Input, Output from DataBase and calculate monthly productivity
+        #Import Input, Output data from DataBase and calculate monthly productivity
         INDCODE_1DIGIT = ['B', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U']
         INDCODE_2DIGIT = [str(i) for i in range(10, 33)]
         INDCODE = INDCODE_1DIGIT + INDCODE_2DIGIT
@@ -57,6 +58,7 @@ if __name__=="__main__":
         monthly_prd.sort_values(by=['year', 'mq'], inplace=True)
 
         pivoted_data = pd.pivot_table(monthly_prd, values='prd_index', columns='kisc_code', index=['year','mq'])
+
         # Applying HP filter to monthly_prd
         prd_cycle = get_productivty_variation(pivoted_data, 'Month')
         new_column_names = ['C'+name if len(name)==2 else name for name in prd_cycle.columns]
@@ -72,38 +74,48 @@ if __name__=="__main__":
         # X_star = pd.read_csv('Xstar.csv', delimiter=',',
         #                      dtype=np.float, header=0, usecols=range(2,41))
 
-        # import DATA from other external sources
+        # Import data from other external source like a excel file
         os.chdir(DATA_PATH)
         W_df = pd.read_csv('weight.csv', delimiter=',',
-                        dtype=np.float32, header=0, usecols=range(2,41))
+                            dtype=np.float32, header=0, usecols=range(2,41))
 
         prd = np.array(prd_cycle, dtype=np.float32)
         weight = np.array(W_df, dtype=np.float64)
         prd_star = calculate_industrial_linkage_data(weight, prd)
 
-
-        # model params
-        N_ITER = 50
-        N_SAVE = 25
-        HORIZON =10
-        N_IND = prd.shape[1]
+        # Set model params
+        N_ITER = 100
+        N_SAVE = 50
+        HORIZON_1 = 5
+        HORIZON_2 = 20
+        N_IND = prd.shape[1] #39
         N_FACTOR = 3
 
         os.chdir(MODULE_PATH)
-        favarx = FactorAugumentedVARX(n_iter=N_ITER, n_save=N_SAVE, lag=1,
-                                      var_lag=1, n_factor=N_FACTOR, horizon=HORIZON,
+        favarx_1 = FactorAugumentedVARX(n_iter=N_ITER, n_save=N_SAVE, lag=1,
+                                      var_lag=1, n_factor=N_FACTOR, horizon=HORIZON_1,
                                       smoother_option='CarterKohn',
                                       is_standardize=False).estimate(prd, prd_star, weight)
 
-        # average over the number of drawed
-        impulse_response = np.mean(favarx.impulse_response, axis=0)
-        et = np.mean(favarx.et, axis=0)
-        var_covar = np.dot(et, et.T)
-
-        CONTRI_RATE = GFEVarianceDecompose(HORIZON, impulse_response,
-                                           var_covar).compute(N_IND, N_IND+N_FACTOR).contri_rate
-
-        vdm = VarianceDecompositionMatrix(N_IND, CONTRI_RATE[HORIZON]).calculate_spillover_effect()
-        spil_to_oths = vdm.spillover_to_oths
-        spil_from_oths = vdm.spillover_from_oths
-        net_effect = vdm.net_spillover
+        # # Average over the number of drawed
+        # imp_res_1 = np.mean(favarx_1.impulse_response, axis=0)
+        # et = np.mean(favarx_1.et, axis=0)
+        # var_covar_1 = np.dot(et.T, et)
+        #
+        # CONTRI_RATE_1 = GFEVarianceDecompose(HORIZON_1, imp_res_1,
+        #                                    var_covar_1).compute(N_IND, N_IND+N_FACTOR).contri_rate
+        #
+        # vdm = VarianceDecompositionMatrix(N_IND, CONTRI_RATE_1[HORIZON_1]).calculate_spillover_effect()
+        # spil_to_oths = vdm.spillover_to_oths
+        # spil_from_oths = vdm.spillover_from_oths
+        # net_effect = vdm.net_spillover
+        #
+        # # Adjustment of contribution rate
+        # column_sum_contri_rate_1 = np.sum(CONTRI_RATE_1[HORIZON_1], keepdims=True, axis=1)
+        # adj_contri_rate_1 = 100*np.divide(CONTRI_RATE_1[HORIZON_1], column_sum_contri_rate_1)
+        #
+        # # Export result to excel file
+        # column_label = list(W_df.columns) + ['Macro_factor_1', 'Macro_factor_2', 'Macro_factor_3']
+        # result_1 = pd.DataFrame(adj_contri_rate_1,
+        #                       columns=column_label)
+        # ExcelExporter(DATA_PATH, 'industrial_spillover_result_1.xlsx', result_1).write_data(sheetname='Sheet1')

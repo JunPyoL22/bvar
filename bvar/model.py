@@ -1,5 +1,7 @@
 import numpy as np
 from numpy.linalg import inv, matrix_power
+from tqdm import tnrange, tqdm_notebook
+from time import sleep
 from bvar.base import BaseLinearRegression, BayesianModel, BasePrior, SetupForVAR
 from bvar.sampling import Sampler
 from bvar.utils import standardize, cholx, vec, DotDict, is_coefficient_stable, get_principle_component
@@ -104,11 +106,7 @@ class BayesianLinearRegression(BayesianModel, Sampler):
         return self
 
     def _gibbs_sampling(self, Y, X, sigma0):
-        try:
-            ols = self.fit(Y, X, method='ls')
-        except:
-            print(Y)
-            print(X)
+        ols = self.fit(Y, X, method='ls')
 
         if sigma0 is None and self.prior_type is 'Informative':
             raise ValueError('When prior_type is Informative, sigma must be assigned')
@@ -363,10 +361,12 @@ class FactorAugumentedVARX(BayesianLinearRegression):
         var_lag = self.var_lag
         r = np.ones((m, 1)) # variace of
         sigma = np.eye(n+1)
+        state_dim = n + lag
         self.impulse_response = np.empty((self.n_save, self.horizon, m+n, m+n))
-        self.et = np.empty((self.n_save, m+n, 1))
+        self.et = np.empty((self.n_save, t-(lag+var_lag), m+n))
 
-        for nloop in range(self.n_iter):
+        # for nloop in range(self.n_iter):
+        for nloop in tnrange(self.n_iter, desc='1st loop'):
             self._A = np.empty((m, 2))
             self._B = np.empty((m, 2*lag))
             self._G = np.empty((m, m))
@@ -375,7 +375,8 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             self._F = np.empty((m, m*lag)) #(mxm)x!
             self._e = np.empty((t-lag, m))
 
-            for ind in range(m):
+            # for ind in range(m):
+            for ind in tnrange(m, desc='2nd loop', leave=False):
                 y_i = Y[:, ind: ind + 1]
                 z_i = z[:, ind: ind + 1]
                 y_i_lag = SetupForVAR(lag=lag, const=False).prepare(y_i).X
@@ -399,6 +400,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                 self._hold_drawed_factor_loadings(coef_i, ind, m)
                 r[ind:ind+1, :] = sigma_i
                 self._e[:, ind:ind+1] = y_i[lag:, :] - np.dot(x, reshaped_coef_i)
+                sleep(0.01)
 
             invG = inv(self._G)
             for i in range(1, lag+1):
@@ -446,7 +448,7 @@ class FactorAugumentedVARX(BayesianLinearRegression):
             #         z2 = np.c_[tiled_Gamma, Z_temp]
             #     Z_2 = np.r_(Z_2, z2) #(mx(n+lag))
 
-            Z, H, T, Q, R = self._get_state_space_model_parameters(coef, reshaped_coef, sigma, r,
+            Z, H, T, Q, R = self._get_state_space_model_parameters(reshaped_coef, sigma, r,
                                                                    lag, var_lag, t)
             if nloop == 0:
                 state0, \
@@ -463,9 +465,9 @@ class FactorAugumentedVARX(BayesianLinearRegression):
                                              R=R, H=H, Q=Q, s=n).drawed_state[:, :n]
 
             if nloop >= self.n_save:
-                self.et[nloop-self.n_save, :] = np.c_[self._St[var_lag:, :], self._u]
+                self.et[nloop-self.n_save, :, :] = np.c_[self._St[var_lag:, :], self._u]
                 self.impulse_response[nloop-self.n_save, :, :, :] = \
-                    ImpulseReponseFunction(lag, var_lag, T=T[:n, :n],
+                    ImpulseReponseFunction(lag, var_lag, T=T[:state_dim, :state_dim],
                                            F=self._F, Gamma=self._Gamma).calculate(self.horizon)
 
     def _get_W(self, w, m):
@@ -555,7 +557,7 @@ class ImpulseReponseFunction:
         return impulse_response
 
     def _get_impulse_response(self, horizon, coef_a, coef_b):
-        return np.dot(matrix_power(coef_a, horizon), coef_b)
+        return np.dot(matrix_power(coef_a, horizon), coef_b)[:(self.m+self.k),:(self.m+self.k)]
 
     def _get_coefficients(self):
         m, k = self.m, self.k
@@ -591,21 +593,21 @@ class ImpulseReponseFunction:
 
     def __get_coefficient_A(self, obsEq_Coeff, transEq_Coeff):
 
-        m, nFactors, obsEq_lag, transEq_lag = self.m, self.k, self.lag, self.var_lag
-        matrix = np.zeros((m+nFactors+obsEq_lag, transEq_lag*(m+nFactors+obsEq_lag)))
+        m, n_factor, obseq_lag, transeq_lag = self.m, self.k, self.lag, self.var_lag
+        matrix = np.zeros((m+n_factor+obseq_lag, transeq_lag*(m+n_factor+obseq_lag)))
 
-        for i in range(transEq_lag):
-            transEq_coeff = transEq_Coeff[:nFactors+obsEq_lag,
-                                          i*(nFactors+obsEq_lag):(i+1)*(nFactors+obsEq_lag)]
-            matrix11 = np.zeros(m, m)
-            matrix12 = obsEq_Coeff.dot(transEq_coeff) # mx(nfactors+obsEq_lag)
-            matrix21 = np.zeros((nFactors+obsEq_lag, m))
-            matrix22 = transEq_coeff #(nFactors+obsEq_lag)*(nFactors+obsEq_lag)
+        for i in range(transeq_lag):
+            transeq_coeff = transEq_Coeff[:n_factor+obseq_lag,
+                                          i*(n_factor+obseq_lag):(i+1)*(n_factor+obseq_lag)]
+            matrix11 = np.zeros((m, m))
+            matrix12 = obsEq_Coeff.dot(transeq_coeff) # mx(nfactors+obseq_lag)
+            matrix21 = np.zeros((n_factor+obseq_lag, m))
+            matrix22 = transeq_coeff #(n_factor+obseq_lag)*(n_factor+obseq_lag)
 
-            matrix[:, i*(m+nFactors+obsEq_lag):(i+1)*(m+nFactors+obsEq_lag)] = np.r_[np.c_[matrix11, matrix12],
+            matrix[:, i*(m+n_factor+obseq_lag):(i+1)*(m+n_factor+obseq_lag)] = np.r_[np.c_[matrix11, matrix12],
                                                                                      np.c_[matrix21, matrix22]]
         return np.r_[matrix,
-                     np.c_[np.eye((transEq_lag-1)*(m+nFactors+obsEq_lag)), np.zeros(((transEq_lag-1)*(m+nFactors+obsEq_lag), m+nFactors+obsEq_lag))]]
+                     np.c_[np.eye((transeq_lag-1)*(m+n_factor+obseq_lag)), np.zeros(((transeq_lag-1)*(m+n_factor+obseq_lag), m+n_factor+obseq_lag))]]
 
 
     def __get_coefficient_B(self, obsEq_Coeff):
@@ -640,16 +642,16 @@ class GFEVarianceDecompose(object):
     def _compute_nominator(self, i, j):
         nomi = np.empty((1, self.horizon))
         for h in range(self.horizon-1):
-            nomi[:, h] = np.square(np.dot(self.coef[h][i, :],
-                                          self.sigma[:, j]))
+            nomi[:, h] = np.square(np.dot(self.coef[h][i:i+1, :],
+                                          self.sigma[:, j:j+1]))
         return np.sqrt(1/self.sigma[j, j])*np.sum(nomi, axis=1)
 
     def _compute_denominator(self, i):
         denomi = np.empty((1, self.horizon))
         for h in range(self.horizon-1):
-            denomi[:, h] = np.dot(np.dot(self.coef[h][i, :],
+            denomi[:, h] = np.dot(np.dot(self.coef[h][i:i+1, :],
                                          self.sigma),
-                                         self.coef[h][i, :].T)
+                                         self.coef[h][i:i+1, :].T)
         return np.sum(denomi, axis=1)
 
 class VarianceDecompositionMatrix(object):
@@ -662,14 +664,14 @@ class VarianceDecompositionMatrix(object):
 
     def calculate_spillover_from_oths(self):
         for i in range(self.n_ind):
-            self.spillover_from_oths[i, :] = np.sum(self.var_decomp[i:i+1, :], axis=1) \
-                                             - self.var_decomp[i, i]
+            self.spillover_from_oths[i, :] = np.sum(self.var_decomp[i:i+1, :], axis=1) - \
+                                             self.var_decomp[i, i]
         return self
 
     def calculate_spillover_to_oths(self):
         for i in range(self.n_ind):
-            self.spillover_to_oths[i, :] = np.sum(self.var_decomp[:, i:i+1], axis=0) \
-                                           - self.var_decomp[i, i]
+            self.spillover_to_oths[i, :] = np.sum(self.var_decomp[:, i:i+1], axis=0) - \
+                                           self.var_decomp[i, i]
         return self
 
     def calculate_spillover_effect(self):
