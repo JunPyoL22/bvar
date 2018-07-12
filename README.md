@@ -1,6 +1,5 @@
 # bvar
-Bayesian VAR model 
+Bayesian FAVAR model 
 
-This codes are for Bayesian Linear and VAR analysis using my personal research project. 
-And, these are in progress not completed code. 
-I am still working
+This codes are for Bayesian Factor Augumented VAR code written in Python with Scipy and Numpy.
+The purpose of this code is for analysing industrial producivity spillover effect in Korea.
