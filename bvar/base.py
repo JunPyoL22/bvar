@@ -5,7 +5,7 @@ import numpy as np
 class BaseLinearRegression(object):
 
     def fit(self, Y, X, method='ls'):
-        self.Y, self.X = Y, X
+        # self.Y, self.X = Y, X
         if method is 'ls':
             self.coef, _, _, _ = lstsq(X, Y)
             error = Y - np.dot(X, self.coef)
@@ -49,7 +49,7 @@ class Smoother(metaclass=ABCMeta):
     def smoothing(self):
         pass
 
-class SetupForVAR(object):
+class SetDataForVAR(object):
 
     def __init__(self, lag=0, const=True, forecast_method=None, forecast_horizon=None):
         '''
@@ -86,7 +86,7 @@ class SetupForVAR(object):
                                    self.forecast_horizon).get_data(Y, self.lag)
 
     def _setup_X_on_VAR(self, Y, const):
-        from utils import lag
+        from bvar.utils import lag
         '''
         :param const: include a constant column in X or Not
         '''

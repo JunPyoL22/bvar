@@ -134,20 +134,24 @@ def vec(data):
 class DataChecker(object):
     def __init__(self):
         self._datas = WeakKeyDictionary()
+
     def __get__(self, instance, cls):
         if instance is None:
             return self
         return self._datas.get(instance)
+
     def __set__(self, instance, value):
         data = value
         if self.check_2dimension(data) is False:
             data = np.atleast_2d(data).T
         self.check_univariate_tseries(data)
         self._datas[instance] = data
+
     @staticmethod
     def check_univariate_tseries(value):
         if value.shape[1] > 1:
             raise ValueError('Time-Series data must be univariate(demension=1)')
+
     @staticmethod
     def check_2dimension(value):
         try:
@@ -162,27 +166,24 @@ class DataImporterExporter(object):
     _file_name = None
 
     def __init__(self, path, name):
-        DataImporterExporter._file_path = path
-        if DataImporterExporter.is_file_extension_xlsx_or_xls(name):
-            DataImporterExporter._file_name = name
+        self._file_path = path
+        if self.is_file_extension_xlsx_or_xls(name):
+            self._file_name = name
 
-    @classmethod
-    def read_data(cls, sheet_name='Sheet1'):
+    def read_data(self, sheet_name='Sheet1'):
         pass
 
-    @classmethod
-    def write_data(cls, sheet_name='Sheet1'):
+    def write_data(self, dataframe, sheet_name='Sheet1'):
         pass
 
-    @classmethod
-    def get_file_path_name(cls):
+    def get_file_path_name(self):
         from os import getcwd
-        if getcwd() != DataImporterExporter._file_path:
-            return ''.join([DataImporterExporter._file_path, '\\', DataImporterExporter._file_name])
+        if getcwd() != self._file_path:
+            return ''.join([self._file_path, '\\', self._file_name])
         else:
-            return DataImporterExporter._file_name
-    @classmethod
-    def is_file_extension_xlsx_or_xls(cls, name):
+            return self._file_name
+
+    def is_file_extension_xlsx_or_xls(self, name):
         if ('.xlsx' in name) or ('.xls' in name):
             return True
         else:
@@ -192,25 +193,25 @@ class ExcelImporter(DataImporterExporter):
     def __init__(self, path, name):
         super(ExcelImporter, self).__init__(path, name)
 
-    @classmethod
-    def read_data(cls, sheet_name='Sheet1'):
-        data = read_excel(ExcelImporter.get_file_path_name(), sheetname=sheet_name)
+    def read_data(self, sheet_name='Sheet1'):
+        data = read_excel(self.get_file_path_name(), sheetname=sheet_name)
         return data
 
-
 class ExcelExporter(DataImporterExporter):
-    _writer = None
-    _dataframe = None
 
-    def __init__(self, path, name, dataframe):
+    def __init__(self, path, name):
         super(ExcelExporter, self).__init__(path, name)
-        ExcelExporter._dataframe = dataframe
+        self._writer = ExcelWriter(self.get_file_path_name())
 
-    @classmethod
-    def write_data(cls, sheetname='Sheet1'):
-        ExcelExporter._writer = ExcelWriter(ExcelExporter.get_file_path_name())
-        ExcelExporter._dataframe.to_excel(ExcelExporter._writer, sheet_name=sheetname)
-        ExcelExporter._writer.save()
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._writer.save()
+
+    def write_data(self, dataframe, sheetname='Sheet1'):
+        dataframe.to_excel(self._writer, sheet_name=sheetname)
+        return self
 
 class DotDict(dict):
     __getattr__ = dict.get

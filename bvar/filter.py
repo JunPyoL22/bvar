@@ -1,8 +1,8 @@
 import numpy as np
 from numpy.linalg import inv, det
 from scipy.sparse import spdiags
-from base import Filter
-from utils import Y_Dimension_Checker
+from bvar.base import Filter
+from bvar.utils import Y_Dimension_Checker
                                                                                 
 class HpFilter(Filter):
 
@@ -62,8 +62,6 @@ class HpFilter(Filter):
 class KalmanFilter(Filter):
     '''
         State Space Recursion Equations
-        (1) Observation Eq: y(t) = Z(t)*state(t) + e(t), e(t) ~ N(0,H(t))
-        (2) Transition Eq: state(t) = T(t)*state(t) + R(t)n(t), n(t) ~ N(0,Q(t))
         (1) Observation Eq: y(t) = Z(t)*state(t) + e(t), e(t) ~ N(0,H(t))
         (2) Transition Eq: state(t) = T(t)*state(t) + R(t)n(t), n(t) ~ N(0,Q(t))
          m, k, t mean the dimension of y, state and the number of timeseries observation
@@ -142,8 +140,8 @@ class KalmanFilter(Filter):
 
         for i in range(t):
             yt = y[:, i:i+1]  # mx1
-            Ht = H[i*m:(i + 1)*m, :]  #  mxm
-            Zt = Z[i*m:(i + 1)*m, :]  #  mxk
+            Ht = H[i*m:(i + 1)*m, :]  # mxm
+            Zt = Z[i*m:(i + 1)*m, :]  # mxk
             Tt = T[i*k:(i + 1)*k, :]  # kxk
             Rt = R[i*k:(i + 1)*k, :]  # kxk
             Qt = Q[i*k:(i + 1)*k, :]
