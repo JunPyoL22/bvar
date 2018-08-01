@@ -5,12 +5,12 @@ from db.models import base
 
 class LpsOrmConnector:
     MYSQL_PARAMS = {
-        'DBTYPE': 'mysql+pymysql',
-        'HOST': '10.1.70.113',
-        'USER': 'jplee031107',
-        'PW': '$kpc1004',
-        'DB': 'lps',
-        'PORT': 3306
+        'DBTYPE': '',
+        'HOST': '',
+        'USER': '',
+        'PW': '',
+        'DB': '',
+        'PORT': ''
     }
 
     def __init__(self):
